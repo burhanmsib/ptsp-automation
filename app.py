@@ -100,9 +100,6 @@ else:
 # =========================
 # MODULE 2 – ROUTE PER TANGGAL
 # =========================
-# =========================
-# MODULE 2 – ROUTE PER TANGGAL
-# =========================
 st.header("🟩 Module 2 – Gambar Rute (Per Tanggal)")
 
 results_module2 = []
@@ -133,27 +130,36 @@ else:
 # =========================
 st.header("🟨 Module 3 & 4 – Pengambilan Data Cuaca")
 
-tz = st.selectbox("Zona Waktu Analisis", ["WIB", "WITA", "WIT"], index=0)
+if not st.session_state.get("results_module2"):
+    st.info("Selesaikan dan simpan semua rute terlebih dahulu.")
+else:
 
-results_module34 = []
+    tz = st.selectbox("Zona Waktu Analisis", ["WIB", "WITA", "WIT"], index=0)
 
-with st.spinner("🌐 Mengambil data cuaca (WW3 + FVCOM + GSMaP FTP)..."):
-    for i, item in enumerate(st.session_state.results_module2):
-        result = process_module34(
-            row=df_id.iloc[i],
-            polyline=item["titik5"],
-            tz=tz
-        )
+    if st.button("🌐 Ambil Data Cuaca", type="primary"):
 
-        if result is None:
-            st.error("❌ Gagal mengambil data cuaca untuk salah satu tanggal.")
-            st.stop()
+        results_module34 = []
 
-        results_module34.append(result)
+        with st.spinner("Mengambil data cuaca (WW3 + FVCOM + GSMaP FTP)..."):
 
-st.session_state.results_module34 = results_module34
-st.success("✅ Data cuaca berhasil diambil")
+            for i, item in enumerate(st.session_state.results_module2):
 
+                result = process_module34(
+                    row=df_id.iloc[i],
+                    polyline=item["titik5"],
+                    tz=tz
+                )
+
+                if result is None:
+                    st.error("❌ Gagal mengambil data cuaca.")
+                    break
+
+                results_module34.append(result)
+
+        if len(results_module34) == len(st.session_state.results_module2):
+            st.session_state.results_module34 = results_module34
+            st.success("✅ Data cuaca berhasil diambil")
+            
 # =========================
 # MODULE 5 – WEATHER ANALYSIS
 # =========================
