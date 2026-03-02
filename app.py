@@ -137,6 +137,7 @@ else:
     if st.button("🌐 Ambil Data Cuaca", type="primary"):
 
         results_module34 = []
+        gagal = False
 
         with st.spinner("Mengambil data cuaca (WW3 + FVCOM + GSMaP FTP)..."):
 
@@ -149,12 +150,15 @@ else:
                 )
 
                 if result is None:
-                    st.error("❌ Gagal mengambil data cuaca.")
+                    gagal = True
                     break
 
                 results_module34.append(result)
 
-        if len(results_module34) == len(st.session_state.results_module2):
+        if gagal:
+            st.session_state.results_module34 = None
+            st.error("❌ Gagal mengambil data cuaca. Periksa koneksi atau dataset.")
+        else:
             st.session_state.results_module34 = results_module34
             st.success("✅ Data cuaca berhasil diambil")
             
@@ -163,14 +167,18 @@ else:
 # =========================
 st.header("🟧 Module 5 – Analisis Cuaca (Berbasis Rainfall)")
 
-with st.spinner("📊 Analisis cuaca 6-jaman (Weather berbasis GSMaP)..."):
-    results_module5 = process_module5(
-        st.session_state.results_module34,
-        tz=tz
-    )
+if not st.session_state.get("results_module34"):
+    st.info("Ambil data cuaca terlebih dahulu.")
+else:
 
-st.session_state.results_module5 = results_module5
-st.success("✅ Analisis selesai")
+    with st.spinner("📊 Analisis cuaca 6-jaman..."):
+        results_module5 = process_module5(
+            st.session_state.results_module34,
+            tz=tz
+        )
+
+    st.session_state.results_module5 = results_module5
+    st.success("✅ Analisis selesai")
 
 # =========================
 # MODULE 6 – GENERATE REPORT
