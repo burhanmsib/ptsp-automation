@@ -114,7 +114,7 @@ def process_route_segment_module2_streamlit(row, map_key):
 
         st_folium(
             m_final,
-            height=600,
+            height=800,
             key=f"final_map_{map_key}"
         )
 
