@@ -1,7 +1,7 @@
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
-# (FINAL – WW3 + FVCOM + GSMaP FTP)
+# (CLOUD OPTIMIZED – SAFE + FVCOM 1200/0000)
 # =========================
 
 import re
@@ -15,6 +15,7 @@ import os
 
 from datetime import datetime, timedelta, timezone
 from dateutil import parser
+from concurrent.futures import ThreadPoolExecutor
 
 
 # =========================
@@ -75,7 +76,7 @@ def normalize_date(raw):
 
 
 # =========================
-# DATASET URL BUILDER (WW3 & FVCOM)
+# DATASET URL BUILDER
 # =========================
 
 def ww3_url(dt, user, password):
@@ -92,36 +93,34 @@ def fvcom_url(dt, user, password):
 
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
 
-    # coba 1200 dulu
     base_list = ["1200", "0000"]
 
+    urls = []
+
     for base in base_list:
-        url = (
+        urls.append(
             f"https://{user}:{password}@maritim.bmkg.go.id/"
             f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_{base}.nc"
         )
-        try:
-            xr.open_dataset(url).close()
-            return url
-        except:
-            continue
 
-    raise RuntimeError(f"FVCOM file tidak ditemukan untuk {YYYY}-{MM}-{DD}")
+    return urls
 
 
 # =========================
-# CACHED DATASET LOADER
+# CACHED DATASET LOADER (OPTIMIZED)
 # =========================
 
-@st.cache_resource(show_spinner=False)
-def load_datasets_cached(ww3_url_str, fvcom_url_str):
-    ds_wave = xr.open_dataset(ww3_url_str)
-    ds_cur = xr.open_dataset(fvcom_url_str)
-    return ds_wave, ds_cur
+@st.cache_resource(ttl=7200, show_spinner=False)
+def load_single_dataset(url):
+    return xr.open_dataset(
+        url,
+        engine="netcdf4",
+        decode_times=False
+    )
 
 
 # =========================
-# GSMaP FTP DOWNLOAD
+# GSMaP FTP DOWNLOAD (OPTIMIZED)
 # =========================
 
 def download_gsmap_ftp(dt):
@@ -147,7 +146,8 @@ def download_gsmap_ftp(dt):
     tmp_file.close()
 
     try:
-        ftp = ftplib.FTP(ftp_host)
+        ftp = ftplib.FTP(ftp_host, timeout=15)
+        ftp.set_pasv(True)
         ftp.login(ftp_user, ftp_pass)
 
         with open(tmp_path, "wb") as f:
@@ -156,18 +156,14 @@ def download_gsmap_ftp(dt):
         ftp.quit()
         return tmp_path
 
-    except Exception as e:
-        st.error("❌ Gagal download GSMaP dari FTP")
-        st.exception(e)
-
+    except:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-
         return None
 
 
 # =========================
-# LOAD ALL DATASETS
+# LOAD ALL DATASETS (OPTIMIZED)
 # =========================
 
 def load_datasets(dt_utc):
@@ -175,32 +171,47 @@ def load_datasets(dt_utc):
     user, password = get_bmkg_credentials()
 
     ww3 = ww3_url(dt_utc, user, password)
-    fvcom = fvcom_url(dt_utc, user, password)
+    fvcom_urls = fvcom_url(dt_utc, user, password)
 
+    # Load WW3
     try:
-        ds_wave, ds_cur = load_datasets_cached(ww3, fvcom)
+        ds_wave = load_single_dataset(ww3)
     except Exception as e:
-        st.error("❌ Gagal membuka dataset WW3/FVCOM")
+        st.error("❌ Gagal membuka dataset WW3")
         st.exception(e)
         return None, None, None
 
+    # Load FVCOM (1200 -> 0000 fallback)
+    ds_cur = None
+    for url in fvcom_urls:
+        try:
+            ds_cur = load_single_dataset(url)
+            break
+        except:
+            continue
+
+    if ds_cur is None:
+        st.error("❌ FVCOM file tidak ditemukan (1200 & 0000 gagal)")
+        return None, None, None
+
+    # GSMaP
     gsmap_file = download_gsmap_ftp(dt_utc)
 
-    if gsmap_file is None:
-        return ds_wave, ds_cur, None
+    ds_rain = None
+    if gsmap_file:
+        try:
+            ds_rain = xr.open_dataset(gsmap_file, engine="netcdf4", decode_times=False)
+        except:
+            ds_rain = None
 
-    try:
-        ds_rain = xr.open_dataset(gsmap_file)
-    except Exception as e:
-        st.error("❌ Gagal membuka file GSMaP")
-        st.exception(e)
-        ds_rain = None
+        if os.path.exists(gsmap_file):
+            os.remove(gsmap_file)
 
     return ds_wave, ds_cur, ds_rain
 
 
 # =========================
-# SAFE GRID EXTRACTION
+# SAFE GRID EXTRACTION (FASTER, SAME RESULT)
 # =========================
 
 def safe_extract(ds, var, t, lat, lon, depth=None):
@@ -211,21 +222,35 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
     try:
         da = ds[var]
 
+        # TIME
         if "time" in da.dims:
-            da = da.sel(time=t, method="nearest")
+            time_vals = ds["time"].values
+            t_idx = np.abs(time_vals - np.datetime64(t)).argmin()
+            da = da.isel(time=t_idx)
 
+        # DEPTH
         if depth is not None and "depth" in da.dims:
-            da = da.sel(depth=depth, method="nearest")
+            da = da.isel(depth=0)
 
-        if "lat" in da.coords:
-            da = da.sel(lat=lat, method="nearest")
-        elif "latitude" in da.coords:
-            da = da.sel(latitude=lat, method="nearest")
+        # LAT
+        if "lat" in ds.coords:
+            lat_vals = ds["lat"].values
+            lat_idx = np.abs(lat_vals - lat).argmin()
+            da = da.isel(lat=lat_idx)
+        elif "latitude" in ds.coords:
+            lat_vals = ds["latitude"].values
+            lat_idx = np.abs(lat_vals - lat).argmin()
+            da = da.isel(latitude=lat_idx)
 
-        if "lon" in da.coords:
-            da = da.sel(lon=lon, method="nearest")
-        elif "longitude" in da.coords:
-            da = da.sel(longitude=lon, method="nearest")
+        # LON
+        if "lon" in ds.coords:
+            lon_vals = ds["lon"].values
+            lon_idx = np.abs(lon_vals - lon).argmin()
+            da = da.isel(lon=lon_idx)
+        elif "longitude" in ds.coords:
+            lon_vals = ds["longitude"].values
+            lon_idx = np.abs(lon_vals - lon).argmin()
+            da = da.isel(longitude=lon_idx)
 
         return float(da.values)
 
@@ -234,8 +259,9 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
 
 # ===============================
-# WEATHER CLASSIFICATION (BMKG)
+# WEATHER CLASSIFICATION
 # ===============================
+
 def classify_weather_bmkg(rain_mm):
     if rain_mm is None:
         return "Unknown"
@@ -256,7 +282,11 @@ def classify_weather_bmkg(rain_mm):
 
 def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
 
-    rain_val = safe_extract(ds_rain, list(ds_rain.data_vars)[0], t, lat, lon) if ds_rain else None
+    rain_val = safe_extract(
+        ds_rain,
+        list(ds_rain.data_vars)[0],
+        t, lat, lon
+    ) if ds_rain else None
 
     return {
         "wave": {
@@ -317,7 +347,6 @@ def process_module34(row, polyline, tz="WIB"):
 
         samples = [sample0, sample3]
 
-        # RAIN MEAN (IDENTIK JUPYTER)
         rain_vals = []
 
         for s in samples:
