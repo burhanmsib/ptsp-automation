@@ -79,6 +79,9 @@ def numbered_marker(lat, lon, number):
 # =========================
 def process_route_segment_module2_streamlit(row, map_key):
 
+    # =========================
+    # PARSE KOORDINAT AWAL & AKHIR
+    # =========================
     lat1, lon1 = parse_decimal_coordinate(row.get("Koordinat Awal (Desimal)"))
     lat2, lon2 = parse_decimal_coordinate(row.get("Koordinat Akhir (Desimal)"))
 
@@ -86,52 +89,39 @@ def process_route_segment_module2_streamlit(row, map_key):
         st.error("Format koordinat desimal tidak valid.")
         return None
 
-    route_key = f"route_{map_key}"
-    draw_key = f"draw_map_{map_key}"
-
-    # =====================================================
-    # JIKA SUDAH DISIMPAN → TAMPILKAN MODE TERKUNCI
-    # =====================================================
-    if route_key in st.session_state:
-
-        titik5 = st.session_state[route_key]
-
-        m_locked = folium.Map(
-            location=[(lat1 + lat2) / 2, (lon1 + lon2) / 2],
-            zoom_start=10
-        )
-
-        folium.PolyLine(titik5, color="#1565C0", weight=6).add_to(m_locked)
-
-        st.success("✅ Rute sudah disimpan")
-
-        st_folium(m_locked, height=600, key=f"locked_{map_key}")
-
-        if st.button(f"🔄 Reset Rute", key=f"reset_{map_key}"):
-            del st.session_state[route_key]
-            st.rerun()
-
-        return {
-            "tanggal": row.get("Tanggal Koordinat"),
-            "awal": (lat1, lon1),
-            "akhir": (lat2, lon2),
-            "titik5": titik5
-        }
-
-    # =====================================================
-    # MODE GAMBAR
-    # =====================================================
-    m = folium.Map(
-        location=[(lat1 + lat2) / 2, (lon1 + lon2) / 2],
-        zoom_start=10
+    st.caption(
+        f"{row.get('Koordinat Awal')} ➜ {row.get('Koordinat Akhir')}"
     )
 
-    folium.Marker([lat1, lon1], icon=folium.Icon(color="green")).add_to(m)
-    folium.Marker([lat2, lon2], icon=folium.Icon(color="red")).add_to(m)
+    # =========================
+    # MAP AWAL (DRAW MODE)
+    # =========================
+    m = folium.Map(
+        location=[(lat1 + lat2) / 2, (lon1 + lon2) / 2],
+        zoom_start=7,
+        tiles="OpenStreetMap"
+    )
+
+    folium.Marker(
+        [lat1, lon1],
+        tooltip="Start Point",
+        icon=folium.Icon(color="green", icon="play")
+    ).add_to(m)
+
+    folium.Marker(
+        [lat2, lon2],
+        tooltip="End Point",
+        icon=folium.Icon(color="red", icon="flag")
+    ).add_to(m)
 
     Draw(
         draw_options={
-            "polyline": True,
+            "polyline": {
+                "shapeOptions": {
+                    "color": "#1565C0",
+                    "weight": 6,
+                }
+            },
             "polygon": False,
             "circle": False,
             "rectangle": False,
@@ -143,39 +133,69 @@ def process_route_segment_module2_streamlit(row, map_key):
 
     output = st_folium(
         m,
-        height=600,
-        key=draw_key,
-        returned_objects=["all_drawings"]
+        height=800,
+        width=None,
+        key=f"draw_map_{map_key}",
+        returned_objects=["last_active_drawing"]
     )
 
-    if not output or not output.get("all_drawings"):
+    drawing = output.get("last_active_drawing")
+
+    if drawing is None:
         st.info("Gambar rute dengan TEPAT 5 titik.")
         return None
 
-    drawings = output["all_drawings"]
+    geom = drawing.get("geometry", {})
 
-    polyline = None
-    for obj in drawings:
-        if obj.get("geometry", {}).get("type") == "LineString":
-            polyline = obj
-
-    if not polyline:
+    if geom.get("type") != "LineString":
+        st.warning("Objek harus berupa polyline.")
         return None
 
-    coords = polyline["geometry"]["coordinates"]
-    jumlah_titik = len(coords)
+    coords = geom.get("coordinates", [])
 
-    st.write(f"Jumlah titik terdeteksi: **{jumlah_titik}**")
-
-    if jumlah_titik != 5:
-        st.warning("Rute harus tepat 5 titik sebelum disimpan.")
+    if len(coords) != REQUIRED_POINTS:
+        st.error(f"Rute harus TEPAT {REQUIRED_POINTS} titik. Sekarang: {len(coords)} titik.")
         return None
 
-    titik5 = [(pt[1], pt[0]) for pt in coords]
+    # lon,lat → lat,lon
+    points_latlon = [(pt[1], pt[0]) for pt in coords]
 
-    if st.button(f"💾 Simpan Rute", key=f"save_{map_key}"):
+    titik5 = split_route_into_5(points_latlon)
 
-        st.session_state[route_key] = titik5
-        st.rerun()
+    if titik5 is None:
+        st.error("Gagal membuat 5 titik.")
+        return None
 
-    return None
+    # =========================
+    # MAP FINAL
+    # =========================
+    m2 = folium.Map(
+        location=[(lat1 + lat2) / 2, (lon1 + lon2) / 2],
+        zoom_start=7,
+        tiles="OpenStreetMap"
+    )
+
+    folium.PolyLine(
+        locations=titik5,
+        color="#1565C0",
+        weight=6,
+    ).add_to(m2)
+
+    for i, (lat, lon) in enumerate(titik5, start=1):
+        numbered_marker(lat, lon, i).add_to(m2)
+
+    st.success("✅ Rute valid & tersimpan")
+
+    st_folium(
+        m2,
+        height=800,
+        width=None,
+        key=f"final_map_{map_key}"
+    )
+
+    return {
+        "tanggal": row.get("Tanggal Koordinat"),
+        "awal": (lat1, lon1),
+        "akhir": (lat2, lon2),
+        "titik5": titik5
+    }
