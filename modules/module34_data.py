@@ -1,7 +1,7 @@
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
-# (CLOUD OPTIMIZED – SAFE + FVCOM 1200/0000)
+# (CLOUD OPTIMIZED – STABLE VERSION)
 # =========================
 
 import re
@@ -15,7 +15,6 @@ import os
 
 from datetime import datetime, timedelta, timezone
 from dateutil import parser
-from concurrent.futures import ThreadPoolExecutor
 
 
 # =========================
@@ -90,33 +89,23 @@ def ww3_url(dt, user, password):
 
 
 def fvcom_url(dt, user, password):
-
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
 
-    base_list = ["1200", "0000"]
-
-    urls = []
-
-    for base in base_list:
-        urls.append(
-            f"https://{user}:{password}@maritim.bmkg.go.id/"
-            f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_{base}.nc"
-        )
-
-    return urls
+    return [
+        f"https://{user}:{password}@maritim.bmkg.go.id/"
+        f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_1200.nc",
+        f"https://{user}:{password}@maritim.bmkg.go.id/"
+        f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_0000.nc",
+    ]
 
 
 # =========================
-# CACHED DATASET LOADER (OPTIMIZED)
+# CACHED DATASET LOADER
 # =========================
 
 @st.cache_resource(ttl=7200, show_spinner=False)
 def load_single_dataset(url):
-    return xr.open_dataset(
-        url,
-        engine="netcdf4",
-        decode_times=False
-    )
+    return xr.open_dataset(url, engine="netcdf4")
 
 
 # =========================
@@ -163,7 +152,7 @@ def download_gsmap_ftp(dt):
 
 
 # =========================
-# LOAD ALL DATASETS (OPTIMIZED)
+# LOAD ALL DATASETS
 # =========================
 
 def load_datasets(dt_utc):
@@ -181,7 +170,7 @@ def load_datasets(dt_utc):
         st.exception(e)
         return None, None, None
 
-    # Load FVCOM (1200 -> 0000 fallback)
+    # Load FVCOM (1200 → 0000 fallback)
     ds_cur = None
     for url in fvcom_urls:
         try:
@@ -195,12 +184,12 @@ def load_datasets(dt_utc):
         return None, None, None
 
     # GSMaP
+    ds_rain = None
     gsmap_file = download_gsmap_ftp(dt_utc)
 
-    ds_rain = None
     if gsmap_file:
         try:
-            ds_rain = xr.open_dataset(gsmap_file, engine="netcdf4", decode_times=False)
+            ds_rain = xr.open_dataset(gsmap_file, engine="netcdf4")
         except:
             ds_rain = None
 
@@ -211,7 +200,7 @@ def load_datasets(dt_utc):
 
 
 # =========================
-# SAFE GRID EXTRACTION (FASTER, SAME RESULT)
+# SAFE GRID EXTRACTION (FAST & SAFE)
 # =========================
 
 def safe_extract(ds, var, t, lat, lon, depth=None):
@@ -222,33 +211,27 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
     try:
         da = ds[var]
 
-        # TIME
         if "time" in da.dims:
-            time_vals = ds["time"].values
-            t_idx = np.abs(time_vals - np.datetime64(t)).argmin()
-            da = da.isel(time=t_idx)
+            da = da.sel(time=t, method="nearest")
 
-        # DEPTH
         if depth is not None and "depth" in da.dims:
-            da = da.isel(depth=0)
+            da = da.sel(depth=depth, method="nearest")
 
-        # LAT
-        if "lat" in ds.coords:
-            lat_vals = ds["lat"].values
+        if "lat" in da.coords:
+            lat_vals = da["lat"].values
             lat_idx = np.abs(lat_vals - lat).argmin()
             da = da.isel(lat=lat_idx)
-        elif "latitude" in ds.coords:
-            lat_vals = ds["latitude"].values
+        elif "latitude" in da.coords:
+            lat_vals = da["latitude"].values
             lat_idx = np.abs(lat_vals - lat).argmin()
             da = da.isel(latitude=lat_idx)
 
-        # LON
-        if "lon" in ds.coords:
-            lon_vals = ds["lon"].values
+        if "lon" in da.coords:
+            lon_vals = da["lon"].values
             lon_idx = np.abs(lon_vals - lon).argmin()
             da = da.isel(lon=lon_idx)
-        elif "longitude" in ds.coords:
-            lon_vals = ds["longitude"].values
+        elif "longitude" in da.coords:
+            lon_vals = da["longitude"].values
             lon_idx = np.abs(lon_vals - lon).argmin()
             da = da.isel(longitude=lon_idx)
 
