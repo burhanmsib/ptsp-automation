@@ -86,47 +86,13 @@ def process_route_segment_module2_streamlit(row, map_key):
         st.error("Format koordinat desimal tidak valid.")
         return None
 
-    route_key = f"route_{map_key}"
-    draw_key = f"draw_map_{map_key}"
-
-    # =====================================================
-    # JIKA SUDAH DISIMPAN → TAMPILKAN MODE TERKUNCI
-    # =====================================================
-    if route_key in st.session_state:
-
-        titik5 = st.session_state[route_key]
-
-        m_locked = folium.Map(
-            location=[(lat1 + lat2) / 2, (lon1 + lon2) / 2],
-            zoom_start=10
-        )
-
-        folium.PolyLine(titik5, color="#1565C0", weight=6).add_to(m_locked)
-
-        for i, (lat, lon) in enumerate(titik5, start=1):
-            numbered_marker(lat, lon, i).add_to(m_locked)
-
-        st.success("✅ Rute sudah disimpan.")
-
-        st_folium(m_locked, height=600, key=f"locked_{map_key}")
-
-        if st.button(f"🔄 Reset Rute", key=f"reset_{map_key}"):
-            del st.session_state[route_key]
-            st.rerun()
-
-        return {
-            "tanggal": row.get("Tanggal Koordinat"),
-            "awal": (lat1, lon1),
-            "akhir": (lat2, lon2),
-            "titik5": titik5
-        }
-
-    # =====================================================
-    # MODE GAMBAR
-    # =====================================================
+    # =========================
+    # LOAD MAP
+    # =========================
     m = folium.Map(
         location=[(lat1 + lat2) / 2, (lon1 + lon2) / 2],
-        zoom_start=10
+        zoom_start=10,
+        tiles="OpenStreetMap"
     )
 
     folium.Marker([lat1, lon1], tooltip="Start", icon=folium.Icon(color="green")).add_to(m)
@@ -147,43 +113,58 @@ def process_route_segment_module2_streamlit(row, map_key):
     output = st_folium(
         m,
         height=600,
-        key=draw_key,
+        key=f"draw_map_{map_key}",
         returned_objects=["all_drawings"]
     )
 
+    # =========================
+    # CEK GAMBARAN
+    # =========================
     if not output or not output.get("all_drawings"):
-        st.info("Gambar rute lalu klik tombol Validasi.")
+        st.info("Gambar rute dengan TEPAT 5 titik.")
         return None
 
     drawings = output["all_drawings"]
 
+    # Ambil polyline terakhir
     polyline = None
     for obj in drawings:
         if obj.get("geometry", {}).get("type") == "LineString":
             polyline = obj
 
     if not polyline:
-        st.warning("Harus berupa polyline.")
+        st.warning("Objek harus berupa polyline.")
         return None
 
     coords = polyline["geometry"]["coordinates"]
     jumlah_titik = len(coords)
 
-    st.write(f"Jumlah titik terdeteksi: **{jumlah_titik}**")
+    st.write(f"Jumlah titik saat ini: **{jumlah_titik}**")
 
-    # =====================================================
-    # TOMBOL VALIDASI
-    # =====================================================
-    if st.button("💾 Validasi & Simpan Rute", key=f"validate_{map_key}"):
+    if jumlah_titik != 5:
+        st.error("Rute harus TEPAT 5 titik. Silakan gambar ulang.")
+        return None
 
-        if jumlah_titik != 5:
-            st.error("❌ Rute harus TEPAT 5 titik.")
-            return None
+    # =========================
+    # KONVERSI KOORDINAT
+    # =========================
+    titik5 = [(pt[1], pt[0]) for pt in coords]
 
-        titik5 = [(pt[1], pt[0]) for pt in coords]
-        st.session_state[route_key] = titik5
+    # =========================
+    # TOMBOL SIMPAN RUTE
+    # =========================
+    if st.button(f"💾 Simpan Rute Tanggal {map_key}", key=f"save_{map_key}"):
 
-        st.success("✅ Rute valid dan berhasil disimpan.")
-        st.rerun()
+        st.session_state[f"route_{map_key}"] = titik5
+        st.success("✅ Rute berhasil disimpan & dikunci.")
+
+    # Kalau sudah tersimpan sebelumnya
+    if f"route_{map_key}" in st.session_state:
+        return {
+            "tanggal": row.get("Tanggal Koordinat"),
+            "awal": (lat1, lon1),
+            "akhir": (lat2, lon2),
+            "titik5": st.session_state[f"route_{map_key}"]
+        }
 
     return None
