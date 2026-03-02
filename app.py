@@ -103,27 +103,25 @@ else:
 st.header("🟩 Module 2 – Gambar Rute (Per Tanggal)")
 
 results_module2 = []
-all_saved = True
 
 for idx, row in df_id.iterrows():
-
     st.markdown("---")
     st.markdown(f"### 📍 Tanggal {row['Tanggal Koordinat']}")
+
+    st.caption(
+        f"Koordinat: {row['Koordinat Awal']} → {row['Koordinat Akhir']}"
+    )
 
     hasil = process_route_segment_module2_streamlit(row, idx)
 
     if hasil is None:
-        all_saved = False
-    else:
-        results_module2.append(hasil)
+        st.warning("❌ Rute belum valid. Silakan gambar ulang.")
+        st.stop()
 
-if all_saved and len(results_module2) == len(df_id):
+    results_module2.append(hasil)
 
-    st.session_state.results_module2 = results_module2
-    st.success("✅ Semua rute per tanggal berhasil disimpan.")
-
-else:
-    st.info("Silakan gambar dan simpan semua rute sebelum lanjut.")
+st.session_state.results_module2 = results_module2
+st.success("✅ Semua rute per tanggal berhasil ditentukan")
 
 # =========================
 # MODULE 3 & 4 – WEATHER SAMPLING
