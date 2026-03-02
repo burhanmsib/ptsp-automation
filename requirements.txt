@@ -1,35 +1,41 @@
 # =========================
 # CORE WEB APP
 # =========================
-streamlit>=1.30
-streamlit-folium>=0.18
+streamlit==1.32.2
+streamlit-folium==0.18.0
 
 # =========================
 # DATA PROCESSING
 # =========================
-pandas>=2.0
-numpy>=1.24
+pandas==2.1.4
+numpy==1.26.4
 
 # =========================
 # GEOSPATIAL & ROUTE
 # =========================
-shapely>=2.0
-folium>=0.15
+shapely==2.0.3
+folium==0.15.1
 
 # =========================
 # WEATHER / OCEAN DATA
 # =========================
-xarray>=2023.1.0
-netCDF4>=1.6
-cftime>=1.6
-python-dateutil>=2.8
+xarray==2023.12.0
+netCDF4==1.6.5
+cftime==1.6.3
+python-dateutil==2.8.2
+
+# =========================
+# GOOGLE SHEET ACCESS
+# =========================
+gspread==5.12.4
+google-auth==2.27.0
 
 # =========================
 # DOCUMENT GENERATION
 # =========================
-python-docx>=0.8.11
+python-docx==0.8.11
 
 # =========================
 # UTILITIES
 # =========================
-requests>=2.31
+requests==2.31.0
