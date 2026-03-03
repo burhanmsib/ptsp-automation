@@ -1,7 +1,7 @@
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
-# (STABLE + CACHED VERSION)
+# (FINAL – STABLE VERSION)
 # =========================
 
 import re
@@ -47,13 +47,12 @@ def get_bmkg_credentials():
 # =========================
 
 def normalize_date(raw):
-
     if raw is None or str(raw).strip() == "":
         return None
 
     s = str(raw)
 
-    # Hapus jam jika ada (noise dari ekstraksi)
+    # Hapus jam (noise ekstraksi)
     s = re.sub(r"\d{1,2}[.:]\d{2}(-\d{1,2}[.:]\d{2})?", "", s)
 
     try:
@@ -76,28 +75,38 @@ def ww3_url(dt, user, password):
     )
 
 
-def fvcom_urls(dt, user, password):
+def fvcom_url(dt, user, password):
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
 
-    return [
-        f"https://{user}:{password}@maritim.bmkg.go.id/"
-        f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_1200.nc",
-        f"https://{user}:{password}@maritim.bmkg.go.id/"
-        f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_0000.nc",
-    ]
+    base_list = ["1200", "0000"]
+
+    for base in base_list:
+        url = (
+            f"https://{user}:{password}@maritim.bmkg.go.id/"
+            f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_{base}.nc"
+        )
+        try:
+            xr.open_dataset(url).close()
+            return url
+        except:
+            continue
+
+    raise RuntimeError(f"FVCOM file tidak ditemukan untuk {YYYY}-{MM}-{DD}")
 
 
 # =========================
-# CACHED DATASET LOADER
+# CACHED DATASET LOADER (VERSI LAMA YANG STABIL)
 # =========================
 
-@st.cache_resource(ttl=7200, show_spinner=False)
-def load_dataset_cached(url):
-    return xr.open_dataset(url)
+@st.cache_resource(show_spinner=False)
+def load_datasets_cached(ww3_url_str, fvcom_url_str):
+    ds_wave = xr.open_dataset(ww3_url_str)
+    ds_cur = xr.open_dataset(fvcom_url_str)
+    return ds_wave, ds_cur
 
 
 # =========================
-# GSMaP FTP DOWNLOAD (SAFE)
+# GSMaP FTP DOWNLOAD
 # =========================
 
 def download_gsmap_ftp(dt):
@@ -123,8 +132,7 @@ def download_gsmap_ftp(dt):
     tmp_file.close()
 
     try:
-        ftp = ftplib.FTP(ftp_host, timeout=15)
-        ftp.set_pasv(True)
+        ftp = ftplib.FTP(ftp_host)
         ftp.login(ftp_user, ftp_pass)
 
         with open(tmp_path, "wb") as f:
@@ -148,46 +156,32 @@ def load_datasets(dt_utc):
     user, password = get_bmkg_credentials()
 
     ww3 = ww3_url(dt_utc, user, password)
-    fv_list = fvcom_urls(dt_utc, user, password)
+    fvcom = fvcom_url(dt_utc, user, password)
 
-    # Load WW3
     try:
-        ds_wave = load_dataset_cached(ww3)
+        ds_wave, ds_cur = load_datasets_cached(ww3, fvcom)
     except:
-        st.error("❌ Gagal membuka dataset WW3")
+        st.error("❌ Gagal membuka dataset WW3/FVCOM")
         return None, None, None
 
-    # Load FVCOM (1200 → 0000 fallback)
-    ds_cur = None
-    for url in fv_list:
-        try:
-            ds_cur = load_dataset_cached(url)
-            break
-        except:
-            continue
-
-    if ds_cur is None:
-        st.error("❌ FVCOM file tidak ditemukan (1200 & 0000 gagal)")
-        return None, None, None
-
-    # Load GSMaP
-    ds_rain = None
     gsmap_file = download_gsmap_ftp(dt_utc)
 
-    if gsmap_file:
-        try:
-            ds_rain = xr.open_dataset(gsmap_file)
-        except:
-            ds_rain = None
+    if gsmap_file is None:
+        return ds_wave, ds_cur, None
 
-        if os.path.exists(gsmap_file):
-            os.remove(gsmap_file)
+    try:
+        ds_rain = xr.open_dataset(gsmap_file)
+    except:
+        ds_rain = None
+
+    if os.path.exists(gsmap_file):
+        os.remove(gsmap_file)
 
     return ds_wave, ds_cur, ds_rain
 
 
 # =========================
-# SAFE GRID EXTRACTION (STABLE)
+# SAFE GRID EXTRACTION (VERSI LAMA)
 # =========================
 
 def safe_extract(ds, var, t, lat, lon, depth=None):
@@ -220,9 +214,9 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
         return None
 
 
-# ===============================
+# =========================
 # WEATHER CLASSIFICATION
-# ===============================
+# =========================
 
 def classify_weather_bmkg(rain_mm):
     if rain_mm is None:
@@ -282,7 +276,6 @@ def process_module34(row, polyline, tz="WIB"):
 
     tz_offset = TZ_OFFSET.get(tz, 7)
 
-    # Reset ke 00:00 karena jam tidak dipakai
     dt_local = dt_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
     dt_utc0 = dt_local.replace(
