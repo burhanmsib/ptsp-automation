@@ -276,16 +276,27 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
 
     # === ISI ===
     for idx, row in enumerate(module1_rows):
-        build_title(doc, row)
 
-        intervals = module5_rows[idx]["intervals"]
-        build_interval_table(doc, intervals)
-        build_notes_primary(doc)
-        build_wave_category_table(doc)
-        build_satellite_image_table(doc, row.get("Tanggal Koordinat",""))
+    # Pastikan index tidak melebihi module5_rows
+    if not module5_rows or idx >= len(module5_rows):
+        continue
 
-        if idx < len(module1_rows) - 1:
-            doc.add_page_break()
+    module5_item = module5_rows[idx]
+
+    # Kalau hasil analisis None, skip tanggal ini
+    if module5_item is None or "intervals" not in module5_item:
+        continue
+
+    build_title(doc, row)
+
+    intervals = module5_item["intervals"]
+    build_interval_table(doc, intervals)
+    build_notes_primary(doc)
+    build_wave_category_table(doc)
+    build_satellite_image_table(doc, row.get("Tanggal Koordinat",""))
+
+    if idx < len(module1_rows) - 1:
+        doc.add_page_break()
 
     # doc.save(output_path)
     # return output_path
