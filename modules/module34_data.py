@@ -1,7 +1,7 @@
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
-# (CLOUD OPTIMIZED – STABLE VERSION)
+# (STABLE + CACHED VERSION)
 # =========================
 
 import re
@@ -20,13 +20,6 @@ from dateutil import parser
 # =========================
 # CONSTANTS
 # =========================
-
-MONTH_ID = {
-    "januari": "January", "februari": "February", "maret": "March",
-    "april": "April", "mei": "May", "juni": "June", "juli": "July",
-    "agustus": "August", "september": "September",
-    "oktober": "October", "november": "November", "desember": "December",
-}
 
 TZ_OFFSET = {
     "WIB": 7,
@@ -50,68 +43,21 @@ def get_bmkg_credentials():
 
 
 # =========================
-# DATE NORMALIZATION (ROBUST & SAFE)
+# DATE NORMALIZATION (STABLE)
 # =========================
+
 def normalize_date(raw):
 
     if raw is None or str(raw).strip() == "":
         return None
 
-    import re
-    from datetime import datetime
-    from dateutil import parser
+    s = str(raw)
 
-    s = str(raw).strip()
-
-    # =========================
-    # HAPUS BAGIAN JAM
-    # =========================
-    # Menghapus:
-    # 12.00
-    # 12:00
-    # 00.00-24.00
-    # / 12.00
+    # Hapus jam jika ada (noise dari ekstraksi)
     s = re.sub(r"\d{1,2}[.:]\d{2}(-\d{1,2}[.:]\d{2})?", "", s)
-    s = s.replace("/", " ").strip()
 
-    # =========================
-    # GANTI BULAN INDONESIA
-    # =========================
-    month_map = {
-        "Januari":"January","Februari":"February","Maret":"March",
-        "April":"April","Mei":"May","Juni":"June","Juli":"July",
-        "Agustus":"August","September":"September",
-        "Oktober":"October","November":"November","Desember":"December"
-    }
-
-    for indo, eng in month_map.items():
-        s = s.replace(indo, eng)
-
-    s = s.strip()
-
-    # =========================
-    # FORMAT EKSPLISIT YANG DIDUKUNG
-    # =========================
-    formats = [
-        "%d.%m.%Y",
-        "%d/%m/%Y",
-        "%d-%m-%Y",
-        "%d %B %Y",
-        "%B %d, %Y",
-        "%Y-%m-%d",
-    ]
-
-    for fmt in formats:
-        try:
-            return datetime.strptime(s, fmt)
-        except:
-            continue
-
-    # =========================
-    # FALLBACK TERAKHIR
-    # =========================
     try:
-        return parser.parse(s, dayfirst=True)
+        return parser.parse(s, dayfirst=True, fuzzy=True)
     except:
         return None
 
@@ -130,7 +76,7 @@ def ww3_url(dt, user, password):
     )
 
 
-def fvcom_url(dt, user, password):
+def fvcom_urls(dt, user, password):
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
 
     return [
@@ -146,12 +92,12 @@ def fvcom_url(dt, user, password):
 # =========================
 
 @st.cache_resource(ttl=7200, show_spinner=False)
-def load_single_dataset(url):
-    return xr.open_dataset(url, engine="netcdf4")
+def load_dataset_cached(url):
+    return xr.open_dataset(url)
 
 
 # =========================
-# GSMaP FTP DOWNLOAD (OPTIMIZED)
+# GSMaP FTP DOWNLOAD (SAFE)
 # =========================
 
 def download_gsmap_ftp(dt):
@@ -202,21 +148,20 @@ def load_datasets(dt_utc):
     user, password = get_bmkg_credentials()
 
     ww3 = ww3_url(dt_utc, user, password)
-    fvcom_urls = fvcom_url(dt_utc, user, password)
+    fv_list = fvcom_urls(dt_utc, user, password)
 
     # Load WW3
     try:
-        ds_wave = load_single_dataset(ww3)
-    except Exception as e:
+        ds_wave = load_dataset_cached(ww3)
+    except:
         st.error("❌ Gagal membuka dataset WW3")
-        st.exception(e)
         return None, None, None
 
     # Load FVCOM (1200 → 0000 fallback)
     ds_cur = None
-    for url in fvcom_urls:
+    for url in fv_list:
         try:
-            ds_cur = load_single_dataset(url)
+            ds_cur = load_dataset_cached(url)
             break
         except:
             continue
@@ -225,13 +170,13 @@ def load_datasets(dt_utc):
         st.error("❌ FVCOM file tidak ditemukan (1200 & 0000 gagal)")
         return None, None, None
 
-    # GSMaP
+    # Load GSMaP
     ds_rain = None
     gsmap_file = download_gsmap_ftp(dt_utc)
 
     if gsmap_file:
         try:
-            ds_rain = xr.open_dataset(gsmap_file, engine="netcdf4")
+            ds_rain = xr.open_dataset(gsmap_file)
         except:
             ds_rain = None
 
@@ -242,7 +187,7 @@ def load_datasets(dt_utc):
 
 
 # =========================
-# SAFE GRID EXTRACTION (FAST & SAFE)
+# SAFE GRID EXTRACTION (STABLE)
 # =========================
 
 def safe_extract(ds, var, t, lat, lon, depth=None):
@@ -260,22 +205,14 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
             da = da.sel(depth=depth, method="nearest")
 
         if "lat" in da.coords:
-            lat_vals = da["lat"].values
-            lat_idx = np.abs(lat_vals - lat).argmin()
-            da = da.isel(lat=lat_idx)
+            da = da.sel(lat=lat, method="nearest")
         elif "latitude" in da.coords:
-            lat_vals = da["latitude"].values
-            lat_idx = np.abs(lat_vals - lat).argmin()
-            da = da.isel(latitude=lat_idx)
+            da = da.sel(latitude=lat, method="nearest")
 
         if "lon" in da.coords:
-            lon_vals = da["lon"].values
-            lon_idx = np.abs(lon_vals - lon).argmin()
-            da = da.isel(lon=lon_idx)
+            da = da.sel(lon=lon, method="nearest")
         elif "longitude" in da.coords:
-            lon_vals = da["longitude"].values
-            lon_idx = np.abs(lon_vals - lon).argmin()
-            da = da.isel(longitude=lon_idx)
+            da = da.sel(longitude=lon, method="nearest")
 
         return float(da.values)
 
@@ -345,6 +282,7 @@ def process_module34(row, polyline, tz="WIB"):
 
     tz_offset = TZ_OFFSET.get(tz, 7)
 
+    # Reset ke 00:00 karena jam tidak dipakai
     dt_local = dt_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
     dt_utc0 = dt_local.replace(
@@ -372,12 +310,11 @@ def process_module34(row, polyline, tz="WIB"):
 
         samples = [sample0, sample3]
 
-        rain_vals = []
-
-        for s in samples:
-            rain_val = s.get("rain", {}).get("precip")
-            if rain_val is not None:
-                rain_vals.append(rain_val)
+        rain_vals = [
+            s.get("rain", {}).get("precip")
+            for s in samples
+            if s.get("rain", {}).get("precip") is not None
+        ]
 
         rain_mean = float(np.mean(rain_vals)) if rain_vals else None
         weather_class = classify_weather_bmkg(rain_mean)
