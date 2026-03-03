@@ -242,18 +242,15 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
     Menghasilkan file DOCX siap download di Streamlit
     """
 
-    # with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-    #     output_path = tmp.name
-
     doc = Document(template_path)
 
     # === COVER ===
     first = module1_rows[0]
-    ka = first.get("Koordinat Awal","")
-    kb = first.get("Koordinat Akhir","")
+    ka = first.get("Koordinat Awal", "")
+    kb = first.get("Koordinat Akhir", "")
 
-    dt_awal = parse_date_flexible(module1_rows[0].get("Tanggal Koordinat",""))
-    dt_akhir = parse_date_flexible(module1_rows[-1].get("Tanggal Koordinat",""))
+    dt_awal = parse_date_flexible(module1_rows[0].get("Tanggal Koordinat", ""))
+    dt_akhir = parse_date_flexible(module1_rows[-1].get("Tanggal Koordinat", ""))
 
     if dt_awal and dt_akhir:
         periode = f"{dt_awal.strftime('%B %d')} - {dt_akhir.strftime('%d, %Y')}"
@@ -261,45 +258,51 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
         periode = ""
 
     replacements = {
-        "$nama_perusahaan": first.get("Nama Perusahaan",""),
-        "$alamat_perusahaan": first.get("Alamat Perusahaan",""),
-        "$no_surat": first.get("Nomor Surat",""),
+        "$nama_perusahaan": first.get("Nama Perusahaan", ""),
+        "$alamat_perusahaan": first.get("Alamat Perusahaan", ""),
+        "$no_surat": first.get("Nomor Surat", ""),
         "$LIST_KOORDINAT": f"From {ka} to {kb}\nfor {periode}",
         "$tanggal_hari_ini": datetime.now().strftime("%d %B %Y"),
     }
 
     for p in doc.paragraphs:
-        for k,v in replacements.items():
+        for k, v in replacements.items():
             if k in p.text:
-                p.text = p.text.replace(k,v)
+                p.text = p.text.replace(k, v)
                 style_paragraph(p)
 
     # === ISI ===
     for idx, row in enumerate(module1_rows):
 
-    # Pastikan index tidak melebihi module5_rows
-    if not module5_rows or idx >= len(module5_rows):
-        continue
+        # Validasi keamanan sebelum akses module5_rows
+        if not module5_rows:
+            continue
 
-    module5_item = module5_rows[idx]
+        if idx >= len(module5_rows):
+            continue
 
-    # Kalau hasil analisis None, skip tanggal ini
-    if module5_item is None or "intervals" not in module5_item:
-        continue
+        module5_item = module5_rows[idx]
 
-    build_title(doc, row)
+        if module5_item is None:
+            continue
 
-    intervals = module5_item["intervals"]
-    build_interval_table(doc, intervals)
-    build_notes_primary(doc)
-    build_wave_category_table(doc)
-    build_satellite_image_table(doc, row.get("Tanggal Koordinat",""))
+        if "intervals" not in module5_item:
+            continue
 
-    if idx < len(module1_rows) - 1:
-        doc.add_page_break()
+        build_title(doc, row)
 
-    # doc.save(output_path)
-    # return output_path
+        intervals = module5_item["intervals"]
+        build_interval_table(doc, intervals)
+        build_notes_primary(doc)
+        build_wave_category_table(doc)
+        build_satellite_image_table(
+            doc,
+            row.get("Tanggal Koordinat", "")
+        )
+
+        if idx < len(module1_rows) - 1:
+            doc.add_page_break()
+
     # === SAVE TO MEMORY ===
     buffer = BytesIO()
     doc.save(buffer)
