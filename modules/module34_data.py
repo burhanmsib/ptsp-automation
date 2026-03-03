@@ -50,26 +50,68 @@ def get_bmkg_credentials():
 
 
 # =========================
-# DATE NORMALIZATION
+# DATE NORMALIZATION (ROBUST & SAFE)
 # =========================
-
 def normalize_date(raw):
+
     if raw is None or str(raw).strip() == "":
         return None
 
-    txt = str(raw).lower()
+    import re
+    from datetime import datetime
+    from dateutil import parser
 
-    for k in ["sd", "to", "-"]:
-        if k in txt:
-            txt = txt.split(k)[0]
+    s = str(raw).strip()
 
-    for indo, eng in MONTH_ID.items():
-        txt = txt.replace(indo, eng.lower())
+    # =========================
+    # HAPUS BAGIAN JAM
+    # =========================
+    # Menghapus:
+    # 12.00
+    # 12:00
+    # 00.00-24.00
+    # / 12.00
+    s = re.sub(r"\d{1,2}[.:]\d{2}(-\d{1,2}[.:]\d{2})?", "", s)
+    s = s.replace("/", " ").strip()
 
-    txt = re.sub(r"\d{1,2}[:.]\d{2}.*", "", txt).strip()
+    # =========================
+    # GANTI BULAN INDONESIA
+    # =========================
+    month_map = {
+        "Januari":"January","Februari":"February","Maret":"March",
+        "April":"April","Mei":"May","Juni":"June","Juli":"July",
+        "Agustus":"August","September":"September",
+        "Oktober":"October","November":"November","Desember":"December"
+    }
 
+    for indo, eng in month_map.items():
+        s = s.replace(indo, eng)
+
+    s = s.strip()
+
+    # =========================
+    # FORMAT EKSPLISIT YANG DIDUKUNG
+    # =========================
+    formats = [
+        "%d.%m.%Y",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d %B %Y",
+        "%B %d, %Y",
+        "%Y-%m-%d",
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(s, fmt)
+        except:
+            continue
+
+    # =========================
+    # FALLBACK TERAKHIR
+    # =========================
     try:
-        return parser.parse(txt, dayfirst=True, fuzzy=True)
+        return parser.parse(s, dayfirst=True)
     except:
         return None
 
