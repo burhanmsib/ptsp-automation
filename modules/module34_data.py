@@ -214,6 +214,21 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
     except:
         return None
 
+# ===============================
+# WEATHER CLASSIFICATION (BMKG)
+# ===============================
+def classify_weather_bmkg(rain_mm):
+    if rain_mm is None:
+        return "Unknown"
+    if rain_mm < 1:
+        return "Clear"
+    if rain_mm < 5:
+        return "Slight Rain"
+    if rain_mm < 10:
+        return "Moderate Rain"
+    if rain_mm < 20:
+        return "Heavy Rain"
+    return "Heavy Rain with Thunderstorm"
 
 # =========================
 # HOURLY WEATHER EXTRACTION (TAMBAHAN)
