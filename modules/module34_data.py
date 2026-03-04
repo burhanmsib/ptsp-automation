@@ -287,9 +287,26 @@ def process_module34(row, polyline, tz="WIB"):
         sample0 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t0, lat, lon)
         sample3 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t3, lat, lon)
 
+        samples = [sample0, sample3]
+
+        # ===== hitung rainfall mean =====
+        rain_vals = []
+
+        for s in samples:
+            rain_val = s.get("rain", {}).get("precip")
+            if rain_val is not None:
+                rain_vals.append(rain_val)
+
+        rain_mean = float(np.mean(rain_vals)) if rain_vals else None
+
+        # ===== klasifikasi weather =====
+        weather_class = classify_weather_bmkg(rain_mean)
+
         segments.append({
             "interval": f"T{i*6}-T{(i+1)*6}",
-            "samples": [sample0, sample3]
+            "samples": samples,
+            "rain_mean": rain_mean,
+            "weather": weather_class
         })
 
     return {
