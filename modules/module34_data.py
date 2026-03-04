@@ -1,7 +1,7 @@
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
-# (PRODUCTION STABLE VERSION – CLOUD SAFE)
+# (ULTRA STABLE VERSION – CLOUD SAFE)
 # =========================
 
 import re
@@ -13,6 +13,7 @@ import ftplib
 import tempfile
 import os
 import time
+import requests
 
 from datetime import datetime, timedelta, timezone
 from dateutil import parser
@@ -51,19 +52,9 @@ def normalize_date(raw):
 
     s = str(raw)
 
-    # ======================
-    # HAPUS JAM
-    # ======================
     s = re.sub(r"\d{1,2}[.:]\d{2}(-\d{1,2}[.:]\d{2})?", "", s)
-
-    # ======================
-    # HAPUS SLASH
-    # ======================
     s = s.replace("/", " ")
 
-    # ======================
-    # KONVERSI BULAN INDONESIA
-    # ======================
     month_map = {
         "Januari": "January",
         "Februari": "February",
@@ -131,32 +122,63 @@ def fvcom_urls(dt, user, password):
 
 
 # =========================
+# CHECK OPeNDAP FILE
+# =========================
+
+def check_opendap_exists(url):
+
+    try:
+
+        test_url = url + ".dds"
+
+        r = requests.get(test_url, timeout=10)
+
+        if r.status_code == 200:
+            return True
+
+        return False
+
+    except:
+        return False
+
+
+# =========================
 # SAFE OPEN DATASET (RETRY)
 # =========================
 
-def open_dataset_with_retry(url, retries=3, delay=2):
+def open_dataset_with_retry(url, retries=3, delay=3):
 
     for i in range(retries):
+
         try:
-            return xr.open_dataset(url)
+
+            ds = xr.open_dataset(url)
+
+            return ds
+
         except Exception as e:
+
             if i < retries - 1:
+
                 time.sleep(delay)
+
             else:
+
                 raise e
 
 
 # =========================
-# CACHE DATASET PER URL
+# CACHE DATASET
 # =========================
 
 @st.cache_resource(show_spinner=False)
 def load_dataset_cached(url):
+
     return open_dataset_with_retry(url)
 
 
 # =========================
-# LOAD ALL DATASETS (STABLE)
+# LOAD ALL DATASETS
 # =========================
 
 def load_datasets(dt_utc):
@@ -164,35 +186,80 @@ def load_datasets(dt_utc):
     user, password = get_bmkg_credentials()
 
     ww3 = ww3_url(dt_utc, user, password)
+
     fv_list = fvcom_urls(dt_utc, user, password)
 
-    time.sleep(1)
+    # =========================
+    # LOAD WW3
+    # =========================
+
+    time.sleep(1.5)
+
+    if not check_opendap_exists(ww3):
+
+        st.error("❌ Dataset WW3 tidak ditemukan")
+
+        return None, None, None
 
     try:
+
         ds_wave = load_dataset_cached(ww3)
+
     except Exception as e:
+
         st.error("❌ Gagal membuka dataset WW3")
+
         st.exception(e)
+
         return None, None, None
+
+
+    # =========================
+    # LOAD FVCOM (AUTO FALLBACK)
+    # =========================
 
     ds_cur = None
+
     for url in fv_list:
-        try:
-            time.sleep(1)
-            ds_cur = load_dataset_cached(url)
-            break
-        except:
+
+        if not check_opendap_exists(url):
+
             continue
 
+        try:
+
+            time.sleep(1)
+
+            ds_cur = load_dataset_cached(url)
+
+            break
+
+        except:
+
+            continue
+
+
     if ds_cur is None:
-        st.error("❌ FVCOM file tidak ditemukan")
+
+        st.error("❌ FVCOM file tidak ditemukan (1200 & 0000)")
+
         return None, None, None
 
+
+    # =========================
+    # LOAD GSMaP
+    # =========================
+
     ds_rain = None
+
     try:
+
         ds_rain = load_gsmap(dt_utc)
+
     except:
+
         ds_rain = None
+
 
     return ds_wave, ds_cur, ds_rain
 
@@ -215,71 +282,93 @@ def load_gsmap(dt):
     remote_path = f"/himawari6/GSMaP/netcdf/{Y}/{M}/{D}/GSMaP_{Y}{M}{D}{H}00.nc"
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".nc")
+
     tmp_path = tmp.name
+
     tmp.close()
 
-    ftp = ftplib.FTP(ftp_host, timeout=20)
+    ftp = ftplib.FTP(ftp_host, timeout=25)
+
     ftp.set_pasv(True)
+
     ftp.login(ftp_user, ftp_pass)
 
     with open(tmp_path, "wb") as f:
+
         ftp.retrbinary(f"RETR {remote_path}", f.write)
 
     ftp.quit()
 
     ds = xr.open_dataset(tmp_path)
+
     os.remove(tmp_path)
 
     return ds
 
 
 # =========================
-# SAFE EXTRACT (ASLI)
+# SAFE EXTRACT
 # =========================
 
 def safe_extract(ds, var, t, lat, lon, depth=None):
 
     if ds is None or var not in ds:
+
         return None
 
     try:
+
         da = ds[var]
 
         if "time" in da.dims:
+
             da = da.sel(time=t, method="nearest")
 
         if depth is not None and "depth" in da.dims:
+
             da = da.sel(depth=depth, method="nearest")
 
         if "lat" in da.coords:
+
             da = da.sel(lat=lat, method="nearest")
 
         if "lon" in da.coords:
+
             da = da.sel(lon=lon, method="nearest")
 
         return float(da.values)
 
     except:
+
         return None
 
+
 # ===============================
-# WEATHER CLASSIFICATION (BMKG)
+# WEATHER CLASSIFICATION
 # ===============================
+
 def classify_weather_bmkg(rain_mm):
+
     if rain_mm is None:
         return "Unknown"
+
     if rain_mm < 1:
         return "Clear"
+
     if rain_mm < 5:
         return "Slight Rain"
+
     if rain_mm < 10:
         return "Moderate Rain"
+
     if rain_mm < 20:
         return "Heavy Rain"
+
     return "Heavy Rain with Thunderstorm"
 
+
 # =========================
-# HOURLY WEATHER EXTRACTION (TAMBAHAN)
+# HOURLY WEATHER EXTRACTION
 # =========================
 
 def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
@@ -291,6 +380,7 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         try:
 
             var = list(ds_rain.data_vars)[0]
+
             da = ds_rain[var]
 
             if "time" in da.dims:
@@ -298,33 +388,41 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
 
             if "lat" in da.coords:
                 da = da.sel(lat=lat, method="nearest")
+
             elif "latitude" in da.coords:
                 da = da.sel(latitude=lat, method="nearest")
 
             if "lon" in da.coords:
                 da = da.sel(lon=lon, method="nearest")
+
             elif "longitude" in da.coords:
                 da = da.sel(longitude=lon, method="nearest")
 
             rain_val = float(da.values)
 
         except:
+
             rain_val = None
 
+
     return {
+
         "wave": {
             "hs": safe_extract(ds_wave, "hs", t, lat, lon),
             "tp": safe_extract(ds_wave, "t01", t, lat, lon),
             "dir": safe_extract(ds_wave, "dir", t, lat, lon),
         },
+
         "wind": {
             "u": safe_extract(ds_wave, "uwnd", t, lat, lon),
             "v": safe_extract(ds_wave, "vwnd", t, lat, lon),
         },
+
         "current": {
             "u": safe_extract(ds_cur, "u", t, lat, lon, depth=0),
             "v": safe_extract(ds_cur, "v", t, lat, lon, depth=0),
         },
+
         "rain": {
             "precip": rain_val
         }
@@ -338,6 +436,7 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
 def process_module34(row, polyline, tz="WIB"):
 
     dt_local = normalize_date(row["Tanggal Koordinat"])
+
     if dt_local is None:
         return None
 
@@ -366,32 +465,44 @@ def process_module34(row, polyline, tz="WIB"):
         t3 = t0 + timedelta(hours=3)
 
         sample0 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t0, lat, lon)
+
         sample3 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t3, lat, lon)
 
         samples = [sample0, sample3]
 
-        # ===== hitung rainfall mean =====
         rain_vals = []
 
         for s in samples:
+
             rain_val = s.get("rain", {}).get("precip")
+
             if rain_val is not None:
+
                 rain_vals.append(rain_val)
 
         rain_mean = float(np.mean(rain_vals)) if rain_vals else None
 
-        # ===== klasifikasi weather =====
         weather_class = classify_weather_bmkg(rain_mean)
 
         segments.append({
+
             "interval": f"T{i*6}-T{(i+1)*6}",
+
             "samples": samples,
+
             "rain_mean": rain_mean,
+
             "weather": weather_class
+
         })
 
+
     return {
+
         "tanggal": dt_local,
+
         "tz": tz,
+
         "segments": segments
+
     }
