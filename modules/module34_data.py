@@ -239,9 +239,27 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
     rain_val = None
 
     if ds_rain is not None:
+
         try:
-            rain_var = list(ds_rain.data_vars)[0]
-            rain_val = safe_extract(ds_rain, rain_var, t, lat, lon)
+
+            var = list(ds_rain.data_vars)[0]
+            da = ds_rain[var]
+
+            if "time" in da.dims:
+                da = da.sel(time=t, method="nearest")
+
+            if "lat" in da.coords:
+                da = da.sel(lat=lat, method="nearest")
+            elif "latitude" in da.coords:
+                da = da.sel(latitude=lat, method="nearest")
+
+            if "lon" in da.coords:
+                da = da.sel(lon=lon, method="nearest")
+            elif "longitude" in da.coords:
+                da = da.sel(longitude=lon, method="nearest")
+
+            rain_val = float(da.values)
+
         except:
             rain_val = None
 
