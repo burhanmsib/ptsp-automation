@@ -118,10 +118,8 @@ def load_datasets(dt_utc):
     ww3 = ww3_url(dt_utc, user, password)
     fv_list = fvcom_urls(dt_utc, user, password)
 
-    # Delay kecil agar tidak bombardir server
     time.sleep(1)
 
-    # --- WW3 ---
     try:
         ds_wave = load_dataset_cached(ww3)
     except Exception as e:
@@ -129,7 +127,6 @@ def load_datasets(dt_utc):
         st.exception(e)
         return None, None, None
 
-    # --- FVCOM (1200 → 0000 fallback) ---
     ds_cur = None
     for url in fv_list:
         try:
@@ -143,7 +140,6 @@ def load_datasets(dt_utc):
         st.error("❌ FVCOM file tidak ditemukan")
         return None, None, None
 
-    # --- GSMaP ---
     ds_rain = None
     try:
         ds_rain = load_gsmap(dt_utc)
@@ -220,7 +216,42 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
 
 # =========================
-# MAIN ENTRY (TIDAK DIUBAH LOGIC)
+# HOURLY WEATHER EXTRACTION (TAMBAHAN)
+# =========================
+
+def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
+
+    rain_val = None
+
+    if ds_rain is not None:
+        try:
+            rain_var = list(ds_rain.data_vars)[0]
+            rain_val = safe_extract(ds_rain, rain_var, t, lat, lon)
+        except:
+            rain_val = None
+
+    return {
+        "wave": {
+            "hs": safe_extract(ds_wave, "hs", t, lat, lon),
+            "tp": safe_extract(ds_wave, "t01", t, lat, lon),
+            "dir": safe_extract(ds_wave, "dir", t, lat, lon),
+        },
+        "wind": {
+            "u": safe_extract(ds_wave, "uwnd", t, lat, lon),
+            "v": safe_extract(ds_wave, "vwnd", t, lat, lon),
+        },
+        "current": {
+            "u": safe_extract(ds_cur, "u", t, lat, lon, depth=0),
+            "v": safe_extract(ds_cur, "v", t, lat, lon, depth=0),
+        },
+        "rain": {
+            "precip": rain_val
+        }
+    }
+
+
+# =========================
+# MAIN ENTRY
 # =========================
 
 def process_module34(row, polyline, tz="WIB"):
