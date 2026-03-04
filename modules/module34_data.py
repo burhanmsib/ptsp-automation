@@ -45,14 +45,62 @@ def get_bmkg_credentials():
 # =========================
 
 def normalize_date(raw):
+
     if raw is None or str(raw).strip() == "":
         return None
 
     s = str(raw)
+
+    # ======================
+    # HAPUS JAM
+    # ======================
     s = re.sub(r"\d{1,2}[.:]\d{2}(-\d{1,2}[.:]\d{2})?", "", s)
 
+    # ======================
+    # HAPUS SLASH
+    # ======================
+    s = s.replace("/", " ")
+
+    # ======================
+    # KONVERSI BULAN INDONESIA
+    # ======================
+    month_map = {
+        "Januari": "January",
+        "Februari": "February",
+        "Maret": "March",
+        "April": "April",
+        "Mei": "May",
+        "Juni": "June",
+        "Juli": "July",
+        "Agustus": "August",
+        "September": "September",
+        "Oktober": "October",
+        "November": "November",
+        "Desember": "December"
+    }
+
+    for indo, eng in month_map.items():
+        s = s.replace(indo, eng)
+
+    s = s.strip()
+
+    formats = [
+        "%d.%m.%Y",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d %B %Y",
+        "%B %d, %Y",
+        "%Y-%m-%d"
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(s, fmt)
+        except:
+            continue
+
     try:
-        return parser.parse(s, dayfirst=True, fuzzy=True)
+        return parser.parse(s, dayfirst=True)
     except:
         return None
 
