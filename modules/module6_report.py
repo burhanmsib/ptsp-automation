@@ -149,7 +149,7 @@ def build_title(doc, row):
 
 def build_interval_table(doc, intervals):
     headers = [
-        "DATE","LOCAL TIME (WIB)","WEATHER",
+        "DATE","LOCAL TIME ({tz})","WEATHER",
         "WIND (Knot)","CURRENT (cm/s)",
         "WAVE (meter)","BEAUFORT SCALE"
     ]
@@ -292,6 +292,7 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
         build_title(doc, row)
 
         intervals = module5_item["intervals"]
+        tz = module5_item.get("tz")
         build_interval_table(doc, intervals)
         build_notes_primary(doc)
         build_wave_category_table(doc)
