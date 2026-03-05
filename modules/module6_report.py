@@ -149,7 +149,7 @@ def build_title(doc, row):
 
 def build_interval_table(doc, intervals):
     headers = [
-        "DATE","LOCAL TIME ({tz})","WEATHER",
+        "DATE",f"LOCAL TIME ({tz})","WEATHER",
         "WIND (Knot)","CURRENT (cm/s)",
         "WAVE (meter)","BEAUFORT SCALE"
     ]
