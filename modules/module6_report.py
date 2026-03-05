@@ -147,7 +147,7 @@ def build_title(doc, row):
     doc.add_paragraph("")
 
 
-def build_interval_table(doc, intervals, tz="WIB):
+def build_interval_table(doc, intervals, tz="WIB"):
     headers = [
         "DATE",f"LOCAL TIME ({tz})","WEATHER",
         "WIND (Knot)","CURRENT (cm/s)",
