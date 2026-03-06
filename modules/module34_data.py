@@ -237,7 +237,7 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
             da = da.sel(depth=depth, method="nearest")
 
         # ======================
-        # FVCOM GRID (latc lonc)
+        # FVCOM GRID
         # ======================
         if "latc" in ds.coords and "lonc" in ds.coords:
 
@@ -245,9 +245,23 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
             lon_vals = ds["lonc"].values
 
             dist = (lat_vals - lat)**2 + (lon_vals - lon)**2
-            idx = dist.argmin()
 
-            da = da.isel(nele=idx)
+            order = np.argsort(dist)
+
+            # coba 20 node terdekat
+            for idx in order[:20]:
+
+                try:
+
+                    val = da.isel(nele=idx).values
+
+                    val = float(val)
+
+                    if not np.isnan(val):
+                        return val
+
+                except:
+                    continue
 
         # ======================
         # REGULAR GRID
@@ -256,12 +270,12 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
             da = da.sel(lat=lat, lon=lon, method="nearest")
 
-        val = float(da.values)
+            val = float(da.values)
 
-        if np.isnan(val):
-            return None
+            if not np.isnan(val):
+                return val
 
-        return val
+        return None
 
     except:
         return None
@@ -352,8 +366,8 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         },
 
         "current": {
-            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=0),
-            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=0)
+            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=1),
+            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=1)
         },
 
         "rain": {
