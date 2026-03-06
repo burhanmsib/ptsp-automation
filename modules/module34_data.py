@@ -224,43 +224,37 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
         da = ds[var]
 
+        # ======================
+        # TIME
+        # ======================
         if "time" in da.dims:
             da = da.sel(time=t, method="nearest")
 
+        # ======================
+        # DEPTH
+        # ======================
         if depth is not None and "depth" in da.dims:
             da = da.sel(depth=depth, method="nearest")
 
-        # =====================
-        # LATITUDE
-        # =====================
-        lat_name = None
+        # ======================
+        # FVCOM GRID (latc lonc)
+        # ======================
+        if "latc" in ds.coords and "lonc" in ds.coords:
 
-        for name in ["lat", "latitude", "latc"]:
-            if name in da.coords:
-                lat_name = name
-                break
+            lat_vals = ds["latc"].values
+            lon_vals = ds["lonc"].values
 
-        if lat_name is not None:
+            dist = (lat_vals - lat)**2 + (lon_vals - lon)**2
+            idx = dist.argmin()
 
-            lat_vals = da[lat_name].values
-            lat_idx = np.abs(lat_vals - lat).argmin()
-            da = da.isel({lat_name: lat_idx})
+            da = da.isel(nele=idx)
 
-        # =====================
-        # LONGITUDE
-        # =====================
-        lon_name = None
+        # ======================
+        # REGULAR GRID
+        # ======================
+        elif "lat" in da.coords and "lon" in da.coords:
 
-        for name in ["lon", "longitude", "lonc"]:
-            if name in da.coords:
-                lon_name = name
-                break
-
-        if lon_name is not None:
-
-            lon_vals = da[lon_name].values
-            lon_idx = np.abs(lon_vals - lon).argmin()
-            da = da.isel({lon_name: lon_idx})
+            da = da.sel(lat=lat, lon=lon, method="nearest")
 
         val = float(da.values)
 
@@ -271,7 +265,6 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
     except:
         return None
-
 
 # =========================
 # WEATHER CLASSIFICATION
