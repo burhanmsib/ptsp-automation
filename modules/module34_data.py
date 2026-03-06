@@ -365,8 +365,8 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         },
 
         "current": {
-            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=0),
-            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=0)
+            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=0.5),
+            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=0.5)
         },
 
         "rain": {
