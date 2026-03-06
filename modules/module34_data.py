@@ -224,52 +224,74 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
         da = ds[var]
 
-        # ======================
+        # =========================
         # TIME
-        # ======================
+        # =========================
         if "time" in da.dims:
             da = da.sel(time=t, method="nearest")
 
-        # ======================
+        # =========================
         # DEPTH
-        # ======================
-        if depth is not None and "depth" in da.dims:
-            da = da.sel(depth=depth, method="nearest")
+        # =========================
+        if depth is not None:
+            for dname in ["depth", "siglay", "siglev"]:
+                if dname in da.dims:
+                    da = da.isel({dname: 0})
+                    break
 
-        # ======================
-        # FVCOM GRID
-        # ======================
-        if "latc" in ds.coords and "lonc" in ds.coords:
+        # =========================
+        # FVCOM GRID DETECTION
+        # =========================
+        lat_name = None
+        lon_name = None
 
-            lat_vals = ds["latc"].values
-            lon_vals = ds["lonc"].values
+        for name in ["latc", "lat", "latitude"]:
+            if name in ds:
+                lat_name = name
+                break
+
+        for name in ["lonc", "lon", "longitude"]:
+            if name in ds:
+                lon_name = name
+                break
+
+        if lat_name and lon_name:
+
+            lat_vals = ds[lat_name].values
+            lon_vals = ds[lon_name].values
+
+            # flatten jika mesh
+            lat_vals = lat_vals.flatten()
+            lon_vals = lon_vals.flatten()
 
             dist = (lat_vals - lat)**2 + (lon_vals - lon)**2
 
-            order = np.argsort(dist)
+            idx_sorted = dist.argsort()
 
-            # coba 20 node terdekat
-            for idx in order[:20]:
+            # =========================
+            # LOOP UNTUK CARI NILAI VALID
+            # =========================
+            for idx in idx_sorted[:50]:
 
-                try:
+                for dim in ["node", "nele", lat_name]:
 
-                    val = da.isel(nele=idx).values
+                    if dim in da.dims:
 
-                    val = float(val)
+                        try:
+                            val = float(da.isel({dim: idx}).values)
 
-                    if not np.isnan(val):
-                        return val
+                            if not np.isnan(val):
+                                return val
 
-                except:
-                    continue
+                        except:
+                            pass
 
-        # ======================
+        # =========================
         # REGULAR GRID
-        # ======================
-        elif "lat" in da.coords and "lon" in da.coords:
+        # =========================
+        if "lat" in da.coords and "lon" in da.coords:
 
             da = da.sel(lat=lat, lon=lon, method="nearest")
-
             val = float(da.values)
 
             if not np.isnan(val):
@@ -366,8 +388,8 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         },
 
         "current": {
-            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=1),
-            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=1)
+            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=0),
+            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=0)
         },
 
         "rain": {
