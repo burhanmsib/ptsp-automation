@@ -313,33 +313,42 @@ def load_gsmap(dt):
 def safe_extract(ds, var, t, lat, lon, depth=None):
 
     if ds is None or var not in ds:
-
         return None
 
     try:
-
         da = ds[var]
 
         if "time" in da.dims:
-
             da = da.sel(time=t, method="nearest")
 
         if depth is not None and "depth" in da.dims:
-
             da = da.sel(depth=depth, method="nearest")
 
+        # ===== LATITUDE =====
         if "lat" in da.coords:
+            lat_vals = da["lat"].values
+            lat_idx = abs(lat_vals - lat).argmin()
+            da = da.isel(lat=lat_idx)
 
-            da = da.sel(lat=lat, method="nearest")
+        elif "latitude" in da.coords:
+            lat_vals = da["latitude"].values
+            lat_idx = abs(lat_vals - lat).argmin()
+            da = da.isel(latitude=lat_idx)
 
+        # ===== LONGITUDE =====
         if "lon" in da.coords:
+            lon_vals = da["lon"].values
+            lon_idx = abs(lon_vals - lon).argmin()
+            da = da.isel(lon=lon_idx)
 
-            da = da.sel(lon=lon, method="nearest")
+        elif "longitude" in da.coords:
+            lon_vals = da["longitude"].values
+            lon_idx = abs(lon_vals - lon).argmin()
+            da = da.isel(longitude=lon_idx)
 
         return float(da.values)
 
     except:
-
         return None
 
 
