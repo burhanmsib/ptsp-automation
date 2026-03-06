@@ -5,7 +5,6 @@
 # =========================
 
 import re
-import math
 import numpy as np
 import xarray as xr
 import streamlit as st
@@ -42,7 +41,7 @@ def get_bmkg_credentials():
 
 
 # =========================
-# DATE NORMALIZATION (SAFE)
+# DATE NORMALIZATION
 # =========================
 
 def normalize_date(raw):
@@ -56,18 +55,10 @@ def normalize_date(raw):
     s = s.replace("/", " ")
 
     month_map = {
-        "Januari": "January",
-        "Februari": "February",
-        "Maret": "March",
-        "April": "April",
-        "Mei": "May",
-        "Juni": "June",
-        "Juli": "July",
-        "Agustus": "August",
-        "September": "September",
-        "Oktober": "October",
-        "November": "November",
-        "Desember": "December"
+        "Januari":"January","Februari":"February","Maret":"March",
+        "April":"April","Mei":"May","Juni":"June","Juli":"July",
+        "Agustus":"August","September":"September",
+        "Oktober":"October","November":"November","Desember":"December"
     }
 
     for indo, eng in month_map.items():
@@ -97,7 +88,7 @@ def normalize_date(raw):
 
 
 # =========================
-# URL BUILDER
+# WW3 URL BUILDER
 # =========================
 
 def ww3_urls(dt, user, password):
@@ -109,14 +100,18 @@ def ww3_urls(dt, user, password):
         f"https://{user}:{password}@maritim.bmkg.go.id/opendap/ww3gfs/{YYYY}/{MM}/w3g_hires_{YYYY}{MM}{DD}_0000.nc",
     ]
 
+
+# =========================
+# FVCOM URL BUILDER
+# =========================
+
 def fvcom_urls(dt, user, password):
+
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
 
     return [
-        f"https://{user}:{password}@maritim.bmkg.go.id/"
-        f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_1200.nc",
-        f"https://{user}:{password}@maritim.bmkg.go.id/"
-        f"opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_0000.nc",
+        f"https://{user}:{password}@maritim.bmkg.go.id/opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_1200.nc",
+        f"https://{user}:{password}@maritim.bmkg.go.id/opendap/fvcom/{YYYY}/{MM}/InaFlows_{YYYY}{MM}{DD}_0000.nc",
     ]
 
 
@@ -130,19 +125,20 @@ def check_opendap_exists(url):
 
         test_url = url + ".dds"
 
-        r = requests.get(test_url, timeout=10)
+        r = requests.get(
+            test_url,
+            timeout=20,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
 
-        if r.status_code == 200:
-            return True
-
-        return False
+        return r.status_code == 200
 
     except:
         return False
 
 
 # =========================
-# SAFE OPEN DATASET (RETRY)
+# SAFE OPEN DATASET
 # =========================
 
 def open_dataset_with_retry(url, retries=3, delay=3):
@@ -150,20 +146,14 @@ def open_dataset_with_retry(url, retries=3, delay=3):
     for i in range(retries):
 
         try:
+            return xr.open_dataset(url)
 
-            ds = xr.open_dataset(url)
-
-            return ds
-
-        except Exception as e:
+        except:
 
             if i < retries - 1:
-
                 time.sleep(delay)
 
-            else:
-
-                raise e
+    return None
 
 
 # =========================
@@ -177,7 +167,7 @@ def load_dataset_cached(url):
 
 
 # =========================
-# LOAD ALL DATASETS
+# LOAD DATASETS
 # =========================
 
 def load_datasets(dt_utc):
@@ -185,84 +175,64 @@ def load_datasets(dt_utc):
     user, password = get_bmkg_credentials()
 
     ww3_list = ww3_urls(dt_utc, user, password)
-
     fv_list = fvcom_urls(dt_utc, user, password)
 
-   # =========================
-# LOAD WW3 (AUTO FALLBACK)
-# =========================
+    # =====================
+    # LOAD WW3
+    # =====================
 
-ds_wave = None
+    ds_wave = None
 
-for url in ww3_list:
+    for url in ww3_list:
 
-    if not check_opendap_exists(url):
-        continue
-
-    try:
-
-        time.sleep(1)
+        if not check_opendap_exists(url):
+            continue
 
         ds_wave = load_dataset_cached(url)
 
-        break
+        if ds_wave is not None:
+            break
 
-    except:
-        continue
+    if ds_wave is None:
+
+        st.error("❌ Dataset WW3 tidak ditemukan")
+
+        return None, None, None
 
 
-if ds_wave is None:
-
-    st.error("❌ Dataset WW3 tidak ditemukan (1200 & 0000)")
-
-    return None, None, None
-
-    # =========================
-    # LOAD FVCOM (AUTO FALLBACK)
-    # =========================
+    # =====================
+    # LOAD FVCOM
+    # =====================
 
     ds_cur = None
 
     for url in fv_list:
 
         if not check_opendap_exists(url):
-
             continue
 
-        try:
+        ds_cur = load_dataset_cached(url)
 
-            time.sleep(1)
-
-            ds_cur = load_dataset_cached(url)
-
+        if ds_cur is not None:
             break
-
-        except:
-
-            continue
-
 
     if ds_cur is None:
 
-        st.error("❌ FVCOM file tidak ditemukan (1200 & 0000)")
+        st.error("❌ FVCOM file tidak ditemukan")
 
         return None, None, None
 
 
-    # =========================
+    # =====================
     # LOAD GSMaP
-    # =========================
+    # =====================
 
     ds_rain = None
 
     try:
-
         ds_rain = load_gsmap(dt_utc)
-
     except:
-
         ds_rain = None
-
 
     return ds_wave, ds_cur, ds_rain
 
@@ -287,17 +257,13 @@ def load_gsmap(dt):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".nc")
 
     tmp_path = tmp.name
-
     tmp.close()
 
     ftp = ftplib.FTP(ftp_host, timeout=25)
 
-    ftp.set_pasv(True)
-
     ftp.login(ftp_user, ftp_pass)
 
     with open(tmp_path, "wb") as f:
-
         ftp.retrbinary(f"RETR {remote_path}", f.write)
 
     ftp.quit()
@@ -310,7 +276,7 @@ def load_gsmap(dt):
 
 
 # =========================
-# SAFE EXTRACT
+# SAFE DATA EXTRACTION
 # =========================
 
 def safe_extract(ds, var, t, lat, lon, depth=None):
@@ -319,6 +285,7 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
         return None
 
     try:
+
         da = ds[var]
 
         if "time" in da.dims:
@@ -327,37 +294,22 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
         if depth is not None and "depth" in da.dims:
             da = da.sel(depth=depth, method="nearest")
 
-        # ===== LATITUDE =====
         if "lat" in da.coords:
-            lat_vals = da["lat"].values
-            lat_idx = abs(lat_vals - lat).argmin()
-            da = da.isel(lat=lat_idx)
+            da = da.sel(lat=lat, method="nearest")
 
-        elif "latitude" in da.coords:
-            lat_vals = da["latitude"].values
-            lat_idx = abs(lat_vals - lat).argmin()
-            da = da.isel(latitude=lat_idx)
-
-        # ===== LONGITUDE =====
         if "lon" in da.coords:
-            lon_vals = da["lon"].values
-            lon_idx = abs(lon_vals - lon).argmin()
-            da = da.isel(lon=lon_idx)
-
-        elif "longitude" in da.coords:
-            lon_vals = da["longitude"].values
-            lon_idx = abs(lon_vals - lon).argmin()
-            da = da.isel(longitude=lon_idx)
+            da = da.sel(lon=lon, method="nearest")
 
         return float(da.values)
 
     except:
+
         return None
 
 
-# ===============================
+# =========================
 # WEATHER CLASSIFICATION
-# ===============================
+# =========================
 
 def classify_weather_bmkg(rain_mm):
 
@@ -380,7 +332,7 @@ def classify_weather_bmkg(rain_mm):
 
 
 # =========================
-# HOURLY WEATHER EXTRACTION
+# WEATHER EXTRACTION
 # =========================
 
 def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
@@ -401,14 +353,8 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
             if "lat" in da.coords:
                 da = da.sel(lat=lat, method="nearest")
 
-            elif "latitude" in da.coords:
-                da = da.sel(latitude=lat, method="nearest")
-
             if "lon" in da.coords:
                 da = da.sel(lon=lon, method="nearest")
-
-            elif "longitude" in da.coords:
-                da = da.sel(longitude=lon, method="nearest")
 
             rain_val = float(da.values)
 
@@ -420,19 +366,19 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
     return {
 
         "wave": {
-            "hs": safe_extract(ds_wave, "hs", t, lat, lon),
-            "tp": safe_extract(ds_wave, "t01", t, lat, lon),
-            "dir": safe_extract(ds_wave, "dir", t, lat, lon),
+            "hs": safe_extract(ds_wave,"hs",t,lat,lon),
+            "tp": safe_extract(ds_wave,"t01",t,lat,lon),
+            "dir": safe_extract(ds_wave,"dir",t,lat,lon)
         },
 
         "wind": {
-            "u": safe_extract(ds_wave, "uwnd", t, lat, lon),
-            "v": safe_extract(ds_wave, "vwnd", t, lat, lon),
+            "u": safe_extract(ds_wave,"uwnd",t,lat,lon),
+            "v": safe_extract(ds_wave,"vwnd",t,lat,lon)
         },
 
         "current": {
-            "u": safe_extract(ds_cur, "u", t, lat, lon, depth=0),
-            "v": safe_extract(ds_cur, "v", t, lat, lon, depth=0),
+            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=0),
+            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=0)
         },
 
         "rain": {
@@ -452,9 +398,9 @@ def process_module34(row, polyline, tz="WIB"):
     if dt_local is None:
         return None
 
-    tz_offset = TZ_OFFSET.get(tz, 7)
+    tz_offset = TZ_OFFSET.get(tz,7)
 
-    dt_local = dt_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    dt_local = dt_local.replace(hour=0,minute=0,second=0,microsecond=0)
 
     dt_utc0 = dt_local.replace(
         tzinfo=timezone(timedelta(hours=tz_offset))
@@ -465,56 +411,42 @@ def process_module34(row, polyline, tz="WIB"):
     if ds_wave is None or ds_cur is None:
         return None
 
-    route = [(p[0], p[1]) for p in polyline]
+    route = [(p[0],p[1]) for p in polyline]
 
     segments = []
 
     for i in range(4):
 
-        lat, lon = route[min(i, len(route) - 1)]
+        lat,lon = route[min(i,len(route)-1)]
 
-        t0 = dt_utc0 + timedelta(hours=i * 6)
+        t0 = dt_utc0 + timedelta(hours=i*6)
         t3 = t0 + timedelta(hours=3)
 
-        sample0 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t0, lat, lon)
+        sample0 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t0,lat,lon)
+        sample3 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t3,lat,lon)
 
-        sample3 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t3, lat, lon)
+        samples = [sample0,sample3]
 
-        samples = [sample0, sample3]
-
-        rain_vals = []
-
-        for s in samples:
-
-            rain_val = s.get("rain", {}).get("precip")
-
-            if rain_val is not None:
-
-                rain_vals.append(rain_val)
+        rain_vals = [
+            s["rain"]["precip"]
+            for s in samples
+            if s["rain"]["precip"] is not None
+        ]
 
         rain_mean = float(np.mean(rain_vals)) if rain_vals else None
 
         weather_class = classify_weather_bmkg(rain_mean)
 
         segments.append({
-
-            "interval": f"T{i*6}-T{(i+1)*6}",
-
-            "samples": samples,
-
-            "rain_mean": rain_mean,
-
-            "weather": weather_class
-
+            "interval":f"T{i*6}-T{(i+1)*6}",
+            "samples":samples,
+            "rain_mean":rain_mean,
+            "weather":weather_class
         })
 
 
     return {
-
-        "tanggal": dt_local,
-
-        "tz": tz,
-
-        "segments": segments
-
+        "tanggal":dt_local,
+        "tz":tz,
+        "segments":segments
     }
