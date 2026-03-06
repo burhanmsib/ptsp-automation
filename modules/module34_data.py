@@ -279,7 +279,7 @@ def load_gsmap(dt):
 # SAFE DATA EXTRACTION
 # =========================
 
-def safe_extract(ds, var, t, lat, lon, depth=None):
+ddef safe_extract(ds, var, t, lat, lon, depth=None):
 
     if ds is None or var not in ds:
         return None
@@ -294,16 +294,35 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
         if depth is not None and "depth" in da.dims:
             da = da.sel(depth=depth, method="nearest")
 
+        # ===== LAT =====
         if "lat" in da.coords:
-            da = da.sel(lat=lat, method="nearest")
 
+            lat_vals = da["lat"].values
+            lat_idx = abs(lat_vals - lat).argmin()
+            da = da.isel(lat=lat_idx)
+
+        elif "latitude" in da.coords:
+
+            lat_vals = da["latitude"].values
+            lat_idx = abs(lat_vals - lat).argmin()
+            da = da.isel(latitude=lat_idx)
+
+        # ===== LON =====
         if "lon" in da.coords:
-            da = da.sel(lon=lon, method="nearest")
+
+            lon_vals = da["lon"].values
+            lon_idx = abs(lon_vals - lon).argmin()
+            da = da.isel(lon=lon_idx)
+
+        elif "longitude" in da.coords:
+
+            lon_vals = da["longitude"].values
+            lon_idx = abs(lon_vals - lon).argmin()
+            da = da.isel(longitude=lon_idx)
 
         return float(da.values)
 
     except:
-
         return None
 
 
@@ -350,18 +369,32 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
             if "time" in da.dims:
                 da = da.sel(time=t, method="nearest")
 
+            # ===== LAT =====
             if "lat" in da.coords:
-                da = da.sel(lat=lat, method="nearest")
+                lat_vals = da["lat"].values
+                lat_idx = abs(lat_vals - lat).argmin()
+                da = da.isel(lat=lat_idx)
 
+            elif "latitude" in da.coords:
+                lat_vals = da["latitude"].values
+                lat_idx = abs(lat_vals - lat).argmin()
+                da = da.isel(latitude=lat_idx)
+
+            # ===== LON =====
             if "lon" in da.coords:
-                da = da.sel(lon=lon, method="nearest")
+                lon_vals = da["lon"].values
+                lon_idx = abs(lon_vals - lon).argmin()
+                da = da.isel(lon=lon_idx)
+
+            elif "longitude" in da.coords:
+                lon_vals = da["longitude"].values
+                lon_idx = abs(lon_vals - lon).argmin()
+                da = da.isel(longitude=lon_idx)
 
             rain_val = float(da.values)
 
         except:
-
             rain_val = None
-
 
     return {
 
