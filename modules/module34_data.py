@@ -1,7 +1,7 @@
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
-# (ULTRA STABLE VERSION – CLOUD SAFE)
+# FINAL STABLE VERSION
 # =========================
 
 import re
@@ -12,7 +12,6 @@ import ftplib
 import tempfile
 import os
 import time
-import requests
 
 from datetime import datetime, timedelta, timezone
 from dateutil import parser
@@ -88,7 +87,7 @@ def normalize_date(raw):
 
 
 # =========================
-# WW3 URL BUILDER
+# URL BUILDERS
 # =========================
 
 def ww3_urls(dt, user, password):
@@ -101,10 +100,6 @@ def ww3_urls(dt, user, password):
     ]
 
 
-# =========================
-# FVCOM URL BUILDER
-# =========================
-
 def fvcom_urls(dt, user, password):
 
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
@@ -116,54 +111,15 @@ def fvcom_urls(dt, user, password):
 
 
 # =========================
-# CHECK OPeNDAP FILE
+# SAFE DATASET OPEN
 # =========================
 
-def check_opendap_exists(url):
+def open_dataset(url):
 
     try:
-
-        test_url = url + ".dds"
-
-        r = requests.get(
-            test_url,
-            timeout=20,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-
-        return r.status_code == 200
-
+        return xr.open_dataset(url)
     except:
-        return False
-
-
-# =========================
-# SAFE OPEN DATASET
-# =========================
-
-def open_dataset_with_retry(url, retries=3, delay=3):
-
-    for i in range(retries):
-
-        try:
-            return xr.open_dataset(url)
-
-        except:
-
-            if i < retries - 1:
-                time.sleep(delay)
-
-    return None
-
-
-# =========================
-# CACHE DATASET
-# =========================
-
-@st.cache_resource(show_spinner=False)
-def load_dataset_cached(url):
-
-    return open_dataset_with_retry(url)
+        return None
 
 
 # =========================
@@ -174,59 +130,41 @@ def load_datasets(dt_utc):
 
     user, password = get_bmkg_credentials()
 
-    ww3_list = ww3_urls(dt_utc, user, password)
-    fv_list = fvcom_urls(dt_utc, user, password)
-
-    # =====================
-    # LOAD WW3
-    # =====================
-
+    # ---------- WW3 ----------
     ds_wave = None
 
-    for url in ww3_list:
+    for url in ww3_urls(dt_utc, user, password):
 
-        if not check_opendap_exists(url):
-            continue
-
-        ds_wave = load_dataset_cached(url)
+        ds_wave = open_dataset(url)
 
         if ds_wave is not None:
             break
 
+        time.sleep(1)
+
     if ds_wave is None:
-
         st.error("❌ Dataset WW3 tidak ditemukan")
-
         return None, None, None
 
 
-    # =====================
-    # LOAD FVCOM
-    # =====================
-
+    # ---------- FVCOM ----------
     ds_cur = None
 
-    for url in fv_list:
+    for url in fvcom_urls(dt_utc, user, password):
 
-        if not check_opendap_exists(url):
-            continue
-
-        ds_cur = load_dataset_cached(url)
+        ds_cur = open_dataset(url)
 
         if ds_cur is not None:
             break
 
+        time.sleep(1)
+
     if ds_cur is None:
-
-        st.error("❌ FVCOM file tidak ditemukan")
-
+        st.error("❌ Dataset FVCOM tidak ditemukan")
         return None, None, None
 
 
-    # =====================
-    # LOAD GSMaP
-    # =====================
-
+    # ---------- GSMAP ----------
     ds_rain = None
 
     try:
@@ -238,7 +176,7 @@ def load_datasets(dt_utc):
 
 
 # =========================
-# GSMaP FTP
+# GSMAP FTP
 # =========================
 
 def load_gsmap(dt):
@@ -255,12 +193,10 @@ def load_gsmap(dt):
     remote_path = f"/himawari6/GSMaP/netcdf/{Y}/{M}/{D}/GSMaP_{Y}{M}{D}{H}00.nc"
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".nc")
-
     tmp_path = tmp.name
     tmp.close()
 
-    ftp = ftplib.FTP(ftp_host, timeout=25)
-
+    ftp = ftplib.FTP(ftp_host)
     ftp.login(ftp_user, ftp_pass)
 
     with open(tmp_path, "wb") as f:
@@ -276,10 +212,10 @@ def load_gsmap(dt):
 
 
 # =========================
-# SAFE DATA EXTRACTION
+# SAFE GRID EXTRACTION
 # =========================
 
-ddef safe_extract(ds, var, t, lat, lon, depth=None):
+def safe_extract(ds, var, t, lat, lon, depth=None):
 
     if ds is None or var not in ds:
         return None
@@ -294,31 +230,15 @@ ddef safe_extract(ds, var, t, lat, lon, depth=None):
         if depth is not None and "depth" in da.dims:
             da = da.sel(depth=depth, method="nearest")
 
-        # ===== LAT =====
         if "lat" in da.coords:
-
             lat_vals = da["lat"].values
-            lat_idx = abs(lat_vals - lat).argmin()
+            lat_idx = np.abs(lat_vals - lat).argmin()
             da = da.isel(lat=lat_idx)
 
-        elif "latitude" in da.coords:
-
-            lat_vals = da["latitude"].values
-            lat_idx = abs(lat_vals - lat).argmin()
-            da = da.isel(latitude=lat_idx)
-
-        # ===== LON =====
         if "lon" in da.coords:
-
             lon_vals = da["lon"].values
-            lon_idx = abs(lon_vals - lon).argmin()
+            lon_idx = np.abs(lon_vals - lon).argmin()
             da = da.isel(lon=lon_idx)
-
-        elif "longitude" in da.coords:
-
-            lon_vals = da["longitude"].values
-            lon_idx = abs(lon_vals - lon).argmin()
-            da = da.isel(longitude=lon_idx)
 
         return float(da.values)
 
@@ -369,32 +289,17 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
             if "time" in da.dims:
                 da = da.sel(time=t, method="nearest")
 
-            # ===== LAT =====
             if "lat" in da.coords:
-                lat_vals = da["lat"].values
-                lat_idx = abs(lat_vals - lat).argmin()
-                da = da.isel(lat=lat_idx)
+                da = da.sel(lat=lat, method="nearest")
 
-            elif "latitude" in da.coords:
-                lat_vals = da["latitude"].values
-                lat_idx = abs(lat_vals - lat).argmin()
-                da = da.isel(latitude=lat_idx)
-
-            # ===== LON =====
             if "lon" in da.coords:
-                lon_vals = da["lon"].values
-                lon_idx = abs(lon_vals - lon).argmin()
-                da = da.isel(lon=lon_idx)
-
-            elif "longitude" in da.coords:
-                lon_vals = da["longitude"].values
-                lon_idx = abs(lon_vals - lon).argmin()
-                da = da.isel(longitude=lon_idx)
+                da = da.sel(lon=lon, method="nearest")
 
             rain_val = float(da.values)
 
         except:
             rain_val = None
+
 
     return {
 
@@ -476,7 +381,6 @@ def process_module34(row, polyline, tz="WIB"):
             "rain_mean":rain_mean,
             "weather":weather_class
         })
-
 
     return {
         "tanggal":dt_local,
