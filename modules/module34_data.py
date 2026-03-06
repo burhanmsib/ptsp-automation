@@ -230,17 +230,44 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
         if depth is not None and "depth" in da.dims:
             da = da.sel(depth=depth, method="nearest")
 
-        if "lat" in da.coords:
-            lat_vals = da["lat"].values
+        # =====================
+        # LATITUDE
+        # =====================
+        lat_name = None
+
+        for name in ["lat", "latitude", "latc"]:
+            if name in da.coords:
+                lat_name = name
+                break
+
+        if lat_name is not None:
+
+            lat_vals = da[lat_name].values
             lat_idx = np.abs(lat_vals - lat).argmin()
-            da = da.isel(lat=lat_idx)
+            da = da.isel({lat_name: lat_idx})
 
-        if "lon" in da.coords:
-            lon_vals = da["lon"].values
+        # =====================
+        # LONGITUDE
+        # =====================
+        lon_name = None
+
+        for name in ["lon", "longitude", "lonc"]:
+            if name in da.coords:
+                lon_name = name
+                break
+
+        if lon_name is not None:
+
+            lon_vals = da[lon_name].values
             lon_idx = np.abs(lon_vals - lon).argmin()
-            da = da.isel(lon=lon_idx)
+            da = da.isel({lon_name: lon_idx})
 
-        return float(da.values)
+        val = float(da.values)
+
+        if np.isnan(val):
+            return None
+
+        return val
 
     except:
         return None
@@ -283,23 +310,40 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         try:
 
             var = list(ds_rain.data_vars)[0]
-
             da = ds_rain[var]
 
             if "time" in da.dims:
                 da = da.sel(time=t, method="nearest")
 
-            if "lat" in da.coords:
-                da = da.sel(lat=lat, method="nearest")
+            lat_name = None
+            for name in ["lat", "latitude"]:
+                if name in da.coords:
+                    lat_name = name
+                    break
 
-            if "lon" in da.coords:
-                da = da.sel(lon=lon, method="nearest")
+            lon_name = None
+            for name in ["lon", "longitude"]:
+                if name in da.coords:
+                    lon_name = name
+                    break
 
-            rain_val = float(da.values)
+            if lat_name and lon_name:
+
+                lat_vals = da[lat_name].values
+                lon_vals = da[lon_name].values
+
+                lat_idx = np.abs(lat_vals - lat).argmin()
+                lon_idx = np.abs(lon_vals - lon).argmin()
+
+                da = da.isel({lat_name: lat_idx, lon_name: lon_idx})
+
+                rain_val = float(da.values)
+
+                if np.isnan(rain_val):
+                    rain_val = None
 
         except:
             rain_val = None
-
 
     return {
 
