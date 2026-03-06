@@ -100,15 +100,14 @@ def normalize_date(raw):
 # URL BUILDER
 # =========================
 
-def ww3_url(dt, user, password):
+def ww3_urls(dt, user, password):
+
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
-    base = "12" if dt.hour >= 12 else "00"
 
-    return (
-        f"https://{user}:{password}@maritim.bmkg.go.id/"
-        f"opendap/ww3gfs/{YYYY}/{MM}/w3g_hires_{YYYY}{MM}{DD}_{base}00.nc"
-    )
-
+    return [
+        f"https://{user}:{password}@maritim.bmkg.go.id/opendap/ww3gfs/{YYYY}/{MM}/w3g_hires_{YYYY}{MM}{DD}_1200.nc",
+        f"https://{user}:{password}@maritim.bmkg.go.id/opendap/ww3gfs/{YYYY}/{MM}/w3g_hires_{YYYY}{MM}{DD}_0000.nc",
+    ]
 
 def fvcom_urls(dt, user, password):
     YYYY, MM, DD = dt.strftime("%Y"), dt.strftime("%m"), dt.strftime("%d")
@@ -185,34 +184,38 @@ def load_datasets(dt_utc):
 
     user, password = get_bmkg_credentials()
 
-    ww3 = ww3_url(dt_utc, user, password)
+    ww3_list = ww3_urls(dt_utc, user, password)
 
     fv_list = fvcom_urls(dt_utc, user, password)
 
-    # =========================
-    # LOAD WW3
-    # =========================
+   # =========================
+# LOAD WW3 (AUTO FALLBACK)
+# =========================
 
-    time.sleep(1.5)
+ds_wave = None
 
-    if not check_opendap_exists(ww3):
+for url in ww3_list:
 
-        st.error("❌ Dataset WW3 tidak ditemukan")
-
-        return None, None, None
+    if not check_opendap_exists(url):
+        continue
 
     try:
 
-        ds_wave = load_dataset_cached(ww3)
+        time.sleep(1)
 
-    except Exception as e:
+        ds_wave = load_dataset_cached(url)
 
-        st.error("❌ Gagal membuka dataset WW3")
+        break
 
-        st.exception(e)
+    except:
+        continue
 
-        return None, None, None
 
+if ds_wave is None:
+
+    st.error("❌ Dataset WW3 tidak ditemukan (1200 & 0000)")
+
+    return None, None, None
 
     # =========================
     # LOAD FVCOM (AUTO FALLBACK)
