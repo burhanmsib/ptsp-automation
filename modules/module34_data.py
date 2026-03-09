@@ -218,67 +218,64 @@ def load_gsmap(dt):
 def safe_extract(ds, var, t, lat, lon, depth=None):
 
     if ds is None or var not in ds:
-        return None
+        return 0.0
 
     try:
 
         da = ds[var]
 
-        # ======================
-        # TIME
-        # ======================
         if "time" in da.dims:
             da = da.sel(time=t, method="nearest")
 
-        # ======================
-        # DEPTH
-        # ======================
         if depth is not None and "depth" in da.dims:
-            da = da.sel(depth=depth, method="nearest")
+            da = da.sel(depth=0, method="nearest")
 
         # ======================
-        # FVCOM GRID
+        # NEAREST GRID
         # ======================
-        if "latc" in ds.coords and "lonc" in ds.coords:
-
-            lat_vals = ds["latc"].values
-            lon_vals = ds["lonc"].values
-
-            dist = (lat_vals - lat)**2 + (lon_vals - lon)**2
-
-            order = np.argsort(dist)
-
-            # coba 20 node terdekat
-            for idx in order[:20]:
-
-                try:
-
-                    val = da.isel(nele=idx).values
-
-                    val = float(val)
-
-                    if not np.isnan(val):
-                        return val
-
-                except:
-                    continue
-
-        # ======================
-        # REGULAR GRID
-        # ======================
-        elif "lat" in da.coords and "lon" in da.coords:
-
-            da = da.sel(lat=lat, lon=lon, method="nearest")
-
-            val = float(da.values)
+        try:
+            val = da.sel(lat=lat, lon=lon, method="nearest").values
+            val = float(val)
 
             if not np.isnan(val):
                 return val
+        except:
+            pass
 
-        return None
+
+        # ======================
+        # SEARCH NEIGHBOR GRID
+        # ======================
+        lat_vals = ds["lat"].values
+        lon_vals = ds["lon"].values
+
+        lat_idx = np.abs(lat_vals - lat).argmin()
+        lon_idx = np.abs(lon_vals - lon).argmin()
+
+        for r in range(1,5):   # search radius
+
+            for i in range(lat_idx-r, lat_idx+r+1):
+                for j in range(lon_idx-r, lon_idx+r+1):
+
+                    try:
+
+                        val = da.isel(lat=i, lon=j).values
+                        val = float(val)
+
+                        if not np.isnan(val):
+                            return val
+
+                    except:
+                        continue
+
+
+        # ======================
+        # LAST FALLBACK
+        # ======================
+        return 0.0
 
     except:
-        return None
+        return 0.0
 # =========================
 # WEATHER CLASSIFICATION
 # =========================
