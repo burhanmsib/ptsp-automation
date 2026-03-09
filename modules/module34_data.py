@@ -1,7 +1,7 @@
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
-# FINAL PRODUCTION VERSION
+# FINAL STABLE VERSION
 # =========================
 
 import re
@@ -65,6 +65,21 @@ def normalize_date(raw):
 
     s = s.strip()
 
+    formats = [
+        "%d.%m.%Y",
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d %B %Y",
+        "%B %d, %Y",
+        "%Y-%m-%d"
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(s, fmt)
+        except:
+            continue
+
     try:
         return parser.parse(s, dayfirst=True)
     except:
@@ -115,6 +130,7 @@ def load_datasets(dt_utc):
 
     user, password = get_bmkg_credentials()
 
+    # ---------- WW3 ----------
     ds_wave = None
 
     for url in ww3_urls(dt_utc, user, password):
@@ -131,6 +147,7 @@ def load_datasets(dt_utc):
         return None, None, None
 
 
+    # ---------- FVCOM ----------
     ds_cur = None
 
     for url in fvcom_urls(dt_utc, user, password):
@@ -147,6 +164,7 @@ def load_datasets(dt_utc):
         return None, None, None
 
 
+    # ---------- GSMAP ----------
     ds_rain = None
 
     try:
@@ -194,7 +212,7 @@ def load_gsmap(dt):
 
 
 # =========================
-# FVCOM SAFE EXTRACTION
+# SAFE GRID EXTRACTION
 # =========================
 
 def safe_extract(ds, var, t, lat, lon, depth=None):
@@ -206,12 +224,21 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
         da = ds[var]
 
+        # ======================
+        # TIME
+        # ======================
         if "time" in da.dims:
             da = da.sel(time=t, method="nearest")
 
+        # ======================
+        # DEPTH
+        # ======================
         if depth is not None and "depth" in da.dims:
             da = da.sel(depth=depth, method="nearest")
 
+        # ======================
+        # FVCOM GRID
+        # ======================
         if "latc" in ds.coords and "lonc" in ds.coords:
 
             lat_vals = ds["latc"].values
@@ -221,11 +248,14 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
             order = np.argsort(dist)
 
-            for idx in order[:30]:
+            # coba 20 node terdekat
+            for idx in order[:20]:
 
                 try:
 
-                    val = float(da.isel(nele=idx).values)
+                    val = da.isel(nele=idx).values
+
+                    val = float(val)
 
                     if not np.isnan(val):
                         return val
@@ -233,12 +263,22 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
                 except:
                     continue
 
+        # ======================
+        # REGULAR GRID
+        # ======================
+        elif "lat" in da.coords and "lon" in da.coords:
+
+            da = da.sel(lat=lat, lon=lon, method="nearest")
+
+            val = float(da.values)
+
+            if not np.isnan(val):
+                return val
+
         return None
 
     except:
         return None
-
-
 # =========================
 # WEATHER CLASSIFICATION
 # =========================
@@ -246,7 +286,7 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 def classify_weather_bmkg(rain_mm):
 
     if rain_mm is None:
-        return "Clear"
+        return "Unknown"
 
     if rain_mm < 1:
         return "Clear"
@@ -276,17 +316,40 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         try:
 
             var = list(ds_rain.data_vars)[0]
-
             da = ds_rain[var]
 
             if "time" in da.dims:
                 da = da.sel(time=t, method="nearest")
 
-            rain_val = float(da.values)
+            lat_name = None
+            for name in ["lat", "latitude"]:
+                if name in da.coords:
+                    lat_name = name
+                    break
+
+            lon_name = None
+            for name in ["lon", "longitude"]:
+                if name in da.coords:
+                    lon_name = name
+                    break
+
+            if lat_name and lon_name:
+
+                lat_vals = da[lat_name].values
+                lon_vals = da[lon_name].values
+
+                lat_idx = np.abs(lat_vals - lat).argmin()
+                lon_idx = np.abs(lon_vals - lon).argmin()
+
+                da = da.isel({lat_name: lat_idx, lon_name: lon_idx})
+
+                rain_val = float(da.values)
+
+                if np.isnan(rain_val):
+                    rain_val = None
 
         except:
             rain_val = None
-
 
     return {
 
@@ -302,8 +365,8 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         },
 
         "current": {
-            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=1),
-            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=1)
+            "u": safe_extract(ds_cur,"u",t,lat,lon,depth=0.5),
+            "v": safe_extract(ds_cur,"v",t,lat,lon,depth=0.5)
         },
 
         "rain": {
