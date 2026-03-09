@@ -258,17 +258,17 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
         periode = ""
 
     replacements = {
-        "$nama_perusahaan": first.get("Nama Perusahaan", ""),
-        "$alamat_perusahaan": first.get("Alamat Perusahaan", ""),
-        "$no_surat": first.get("Nomor Surat", ""),
-        "$LIST_KOORDINAT": f"From {ka} to {kb}\nfor {periode}",
+        "$nama_perusahaan": str(first.get("Nama Perusahaan", "") or ""),
+        "$alamat_perusahaan": str(first.get("Alamat Perusahaan", "") or ""),
+        "$no_surat": str(first.get("Nomor Surat", "") or ""),
+        "$LIST_KOORDINAT": str(f"From {ka} to {kb}\nfor {periode}"),
         "$tanggal_hari_ini": datetime.now().strftime("%d %B %Y"),
     }
 
     for p in doc.paragraphs:
         for k, v in replacements.items():
             if k in p.text:
-                p.text = p.text.replace(k, v)
+                p.text = p.text.replace(k, str(v))
                 style_paragraph(p)
 
     # === ISI ===
