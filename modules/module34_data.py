@@ -402,21 +402,15 @@ def process_module34(row, polyline, tz="WIB"):
 
     for i in range(4):
 
+        lat,lon = route[min(i,len(route)-1)]
+
         t0 = dt_utc0 + timedelta(hours=i*6)
         t3 = t0 + timedelta(hours=3)
-    
-        samples = []
-    
-        # ambil semua titik rute
-        for lat, lon in route:
-    
-            sample0 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t0,lat,lon)
-            sample3 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t3,lat,lon)
-    
-            samples.append(sample0)
-            samples.append(sample3)
 
-            samples = [sample0,sample3]
+        sample0 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t0,lat,lon)
+        sample3 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t3,lat,lon)
+
+        samples = [sample0,sample3]
 
         rain_vals = [
             s["rain"]["precip"]
