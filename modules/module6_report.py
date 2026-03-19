@@ -144,8 +144,9 @@ def build_coordinate_section(doc, module1_rows):
         dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
         dt_str = format_date_en(dt) if dt else ""
 
-        p = doc.add_paragraph(style="List Bullet")
-        p.add_run(f"from {ka} to {kb} for {dt_str}")
+        # 🔥 FIX DI SINI (NO STYLE)
+        p = doc.add_paragraph()
+        p.add_run(f"• from {ka} to {kb} for {dt_str}")
         style_paragraph(p, align="justify")
 
     p = doc.add_paragraph()
