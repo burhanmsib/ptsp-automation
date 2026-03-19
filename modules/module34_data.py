@@ -371,6 +371,17 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         }
     }
 
+# =========================
+# ROUTE INTERPOLATION
+# =========================
+def interpolate_point(p1, p2, fraction):
+    """
+    Interpolasi titik di antara p1 dan p2
+    fraction: 0 → p1, 1 → p2
+    """
+    lat = p1[0] + (p2[0] - p1[0]) * fraction
+    lon = p1[1] + (p2[1] - p1[1]) * fraction
+    return lat, lon
 
 # =========================
 # MAIN ENTRY
@@ -402,15 +413,34 @@ def process_module34(row, polyline, tz="WIB"):
 
     for i in range(4):
 
-        lat,lon = route[min(i,len(route)-1)]
-
+        # =========================
+        # SEGMENT START & END
+        # =========================
+        start = route[i]
+        end = route[i+1]
+    
+        # =========================
+        # TIME
+        # =========================
         t0 = dt_utc0 + timedelta(hours=i*6)
         t3 = t0 + timedelta(hours=3)
-
-        sample0 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t0,lat,lon)
-        sample3 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t3,lat,lon)
-
-        samples = [sample0,sample3]
+    
+        # =========================
+        # POSITION ALONG ROUTE
+        # =========================
+        # t0 → posisi awal segmen
+        lat0, lon0 = start
+    
+        # t3 → posisi tengah segmen (kapal sudah jalan 3 jam)
+        lat3, lon3 = interpolate_point(start, end, 0.5)
+    
+        # =========================
+        # SAMPLING DATA
+        # =========================
+        sample0 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t0, lat0, lon0)
+        sample3 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t3, lat3, lon3)
+    
+        samples = [sample0, sample3]
 
         rain_vals = [
             s["rain"]["precip"]
