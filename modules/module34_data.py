@@ -372,16 +372,21 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
     }
 
 # =========================
-# ROUTE INTERPOLATION
+# GENERATE POINTS ALONG ROUTE
 # =========================
-def interpolate_point(p1, p2, fraction):
+def generate_points_along_segment(p1, p2, n_points=5):
     """
-    Interpolasi titik di antara p1 dan p2
-    fraction: 0 → p1, 1 → p2
+    Membuat titik-titik di sepanjang garis p1 → p2
     """
-    lat = p1[0] + (p2[0] - p1[0]) * fraction
-    lon = p1[1] + (p2[1] - p1[1]) * fraction
-    return lat, lon
+    points = []
+
+    for i in range(n_points):
+        frac = i / (n_points - 1)  # 0 → 1
+        lat = p1[0] + (p2[0] - p1[0]) * frac
+        lon = p1[1] + (p2[1] - p1[1]) * frac
+        points.append((lat, lon))
+
+    return points
 
 # =========================
 # MAIN ENTRY
@@ -413,34 +418,35 @@ def process_module34(row, polyline, tz="WIB"):
 
     for i in range(4):
 
-        # =========================
-        # SEGMENT START & END
-        # =========================
-        start = route[i]
-        end = route[i+1]
-    
-        # =========================
-        # TIME
-        # =========================
-        t0 = dt_utc0 + timedelta(hours=i*6)
-        t3 = t0 + timedelta(hours=3)
-    
-        # =========================
-        # POSITION ALONG ROUTE
-        # =========================
-        # t0 → posisi awal segmen
-        lat0, lon0 = start
-    
-        # t3 → posisi tengah segmen (kapal sudah jalan 3 jam)
-        lat3, lon3 = interpolate_point(start, end, 0.5)
-    
-        # =========================
-        # SAMPLING DATA
-        # =========================
-        sample0 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t0, lat0, lon0)
-        sample3 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t3, lat3, lon3)
-    
-        samples = [sample0, sample3]
+    # =========================
+    # SEGMENT
+    # =========================
+    start = route[i]
+    end = route[i+1]
+
+    # =========================
+    # TIME
+    # =========================
+    t0 = dt_utc0 + timedelta(hours=i*6)
+    t3 = t0 + timedelta(hours=3)
+
+    # =========================
+    # GENERATE POINTS ALONG ROUTE
+    # =========================
+    points = generate_points_along_segment(start, end, n_points=5)
+
+    samples = []
+
+    # =========================
+    # SAMPLING (FULL ROUTE)
+    # =========================
+    for lat, lon in points:
+
+        sample0 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t0, lat, lon)
+        sample3 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t3, lat, lon)
+
+        samples.append(sample0)
+        samples.append(sample3)
 
         rain_vals = [
             s["rain"]["precip"]
