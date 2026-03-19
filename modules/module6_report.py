@@ -286,15 +286,49 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
         "$nama_perusahaan": str(first.get("Nama Perusahaan", "") or ""),
         "$alamat_perusahaan": str(first.get("Alamat Perusahaan", "") or ""),
         "$no_surat": str(first.get("Nomor Surat", "") or ""),
-        "$LIST_KOORDINAT": str(f"From {ka} to {kb}\nfor {periode}"),
+        # "$LIST_KOORDINAT": str(f"From {ka} to {kb}\nfor {periode}"),
         "$tanggal_hari_ini": datetime.now().strftime("%d %B %Y"),
     }
 
     for p in doc.paragraphs:
-        for k, v in replacements.items():
-            if k in p.text:
-                p.text = p.text.replace(k, str(v))
-                style_paragraph(p)
+    text = p.text
+
+    # === HANDLE KOORDINAT KHUSUS ===
+    if "$LIST_KOORDINAT" in text:
+
+        p.clear()
+
+        # kalimat pembuka
+        run = p.add_run(
+            "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
+        )
+        style_paragraph(p, align="justify")
+
+        # insert bullet list tepat setelahnya
+        for row in module1_rows:
+
+            ka = row.get("Koordinat Awal","")
+            kb = row.get("Koordinat Akhir","")
+
+            dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
+            dt_str = format_date_en(dt) if dt else ""
+
+            p_new = doc.add_paragraph()
+            p_new.add_run(f"• from {ka} to {kb} for {dt_str}")
+            style_paragraph(p_new, align="justify")
+
+        # penutup
+        p_end = doc.add_paragraph()
+        p_end.add_run("here with we enclose the meteorological analysis in attachments sheets.")
+        style_paragraph(p_end, align="justify")
+
+        continue
+
+    # === REPLACEMENT NORMAL ===
+    for k, v in replacements.items():
+        if k in text:
+            p.text = text.replace(k, str(v))
+            style_paragraph(p)
 
     # 🆕 TAMBAHAN (TIDAK MERUSAK)
     build_coordinate_section(doc, module1_rows)
