@@ -126,6 +126,33 @@ def set_table_border(table):
     tblPr.append(borders)
 
 # =========================
+# 🆕 TAMBAHAN: KOORDINAT LIST
+# =========================
+def build_coordinate_section(doc, module1_rows):
+
+    p = doc.add_paragraph()
+    p.add_run(
+        "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
+    )
+    style_paragraph(p, align="justify")
+
+    for row in module1_rows:
+
+        ka = row.get("Koordinat Awal","")
+        kb = row.get("Koordinat Akhir","")
+
+        dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
+        dt_str = format_date_en(dt) if dt else ""
+
+        p = doc.add_paragraph(style="List Bullet")
+        p.add_run(f"from {ka} to {kb} for {dt_str}")
+        style_paragraph(p, align="justify")
+
+    p = doc.add_paragraph()
+    p.add_run("here with we enclose the meteorological analysis in attachments sheets.")
+    style_paragraph(p, align="justify")
+
+# =========================
 # SECTION BUILDERS (ASLI)
 # =========================
 def build_title(doc, row):
@@ -238,9 +265,6 @@ def build_satellite_image_table(doc, tanggal_str):
 # MAIN ENTRY (STREAMLIT)
 # =========================
 def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
-    """
-    Menghasilkan file DOCX siap download di Streamlit
-    """
 
     doc = Document(template_path)
 
@@ -271,10 +295,12 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
                 p.text = p.text.replace(k, str(v))
                 style_paragraph(p)
 
+    # 🆕 TAMBAHAN (TIDAK MERUSAK)
+    build_coordinate_section(doc, module1_rows)
+
     # === ISI ===
     for idx, row in enumerate(module1_rows):
 
-        # Validasi keamanan sebelum akses module5_rows
         if not module5_rows:
             continue
 
@@ -293,18 +319,15 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
 
         intervals = module5_item["intervals"]
         tz = module5_item.get("tz", "WIB")
+
         build_interval_table(doc, intervals, tz)
         build_notes_primary(doc)
         build_wave_category_table(doc)
-        build_satellite_image_table(
-            doc,
-            row.get("Tanggal Koordinat", "")
-        )
+        build_satellite_image_table(doc, row.get("Tanggal Koordinat", ""))
 
         if idx < len(module1_rows) - 1:
             doc.add_page_break()
 
-    # === SAVE TO MEMORY ===
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
