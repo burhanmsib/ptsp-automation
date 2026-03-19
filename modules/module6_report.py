@@ -48,24 +48,6 @@ def parse_date_flexible(date_str: str):
         except:
             pass
 
-    m = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})", s)
-    if m:
-        d, mn, y = m.groups()
-        if len(y) == 2:
-            y = "20" + y
-        try:
-            return datetime.strptime(f"{d}-{mn}-{y}", "%d-%m-%Y")
-        except:
-            pass
-
-    m2 = re.search(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", s)
-    if m2:
-        y, mn, d = m2.groups()
-        try:
-            return datetime.strptime(f"{d}-{mn}-{y}", "%d-%m-%Y")
-        except:
-            pass
-
     return None
 
 
@@ -126,32 +108,12 @@ def set_table_border(table):
     tblPr.append(borders)
 
 # =========================
-# 🆕 TAMBAHAN: KOORDINAT LIST
+# 🔥 SAFE INSERT PARAGRAPH (FIX STREAMLIT)
 # =========================
-def build_coordinate_section(doc, module1_rows):
-
-    p = doc.add_paragraph()
-    p.add_run(
-        "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
-    )
-    style_paragraph(p, align="justify")
-
-    for row in module1_rows:
-
-        ka = row.get("Koordinat Awal","")
-        kb = row.get("Koordinat Akhir","")
-
-        dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
-        dt_str = format_date_en(dt) if dt else ""
-
-        # 🔥 FIX DI SINI (NO STYLE)
-        p = doc.add_paragraph()
-        p.add_run(f"• from {ka} to {kb} for {dt_str}")
-        style_paragraph(p, align="justify")
-
-    p = doc.add_paragraph()
-    p.add_run("here with we enclose the meteorological analysis in attachments sheets.")
-    style_paragraph(p, align="justify")
+def insert_paragraph_after(paragraph):
+    new_p = OxmlElement("w:p")
+    paragraph._p.addnext(new_p)
+    return paragraph._parent.add_paragraph("")
 
 # =========================
 # SECTION BUILDERS (ASLI)
@@ -269,18 +231,7 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
 
     doc = Document(template_path)
 
-    # === COVER ===
     first = module1_rows[0]
-    ka = first.get("Koordinat Awal", "")
-    kb = first.get("Koordinat Akhir", "")
-
-    dt_awal = parse_date_flexible(module1_rows[0].get("Tanggal Koordinat", ""))
-    dt_akhir = parse_date_flexible(module1_rows[-1].get("Tanggal Koordinat", ""))
-
-    if dt_awal and dt_akhir:
-        periode = f"{dt_awal.strftime('%B %d')} - {dt_akhir.strftime('%d, %Y')}"
-    else:
-        periode = ""
 
     replacements = {
         "$nama_perusahaan": str(first.get("Nama Perusahaan", "") or ""),
@@ -289,68 +240,55 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
         "$tanggal_hari_ini": datetime.now().strftime("%d %B %Y"),
     }
 
-# =========================
-# 🔥 REPLACEMENT + KOORDINAT (FINAL FIX)
-# =========================
-for p in doc.paragraphs:
-    text = p.text
+    for p in doc.paragraphs:
+        text = p.text
 
-    # ===== KOORDINAT (POSISI TEMPLATE) =====
-    if "$LIST_KOORDINAT" in text:
+        # 🔥 KOORDINAT FIX HALAMAN 1
+        if "$LIST_KOORDINAT" in text:
 
-        p.clear()
+            p.text = ""
 
-        # pembuka
-        p.add_run(
-            "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
-        )
-        style_paragraph(p, align="justify")
+            p.add_run(
+                "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
+            )
+            style_paragraph(p, align="justify")
 
-        current_p = p
+            current_p = p
 
-        # ===== LIST KOORDINAT (MASUK HALAMAN 1) =====
-        for row in module1_rows:
+            for i, row in enumerate(module1_rows):
 
-            ka = row.get("Koordinat Awal","")
-            kb = row.get("Koordinat Akhir","")
+                ka = row.get("Koordinat Awal","")
+                kb = row.get("Koordinat Akhir","")
 
-            dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
-            dt_str = format_date_en(dt) if dt else ""
+                dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
+                dt_str = format_date_en(dt) if dt else ""
 
-            new_p = insert_paragraph_after(current_p)
-            new_p.add_run(f"• from {ka} to {kb} for {dt_str}")
-            style_paragraph(new_p, align="justify")
+                new_p = insert_paragraph_after(current_p)
+                new_p.add_run(f"• from {ka} to {kb} for {dt_str}")
+                style_paragraph(new_p, align="justify")
 
-            current_p = new_p
+                current_p = new_p
 
-        # penutup
-        end_p = insert_paragraph_after(current_p)
-        end_p.add_run("here with we enclose the meteorological analysis in attachments sheets.")
-        style_paragraph(end_p, align="justify")
+            end_p = insert_paragraph_after(current_p)
+            end_p.add_run("here with we enclose the meteorological analysis in attachments sheets.")
+            style_paragraph(end_p, align="justify")
 
-        continue
+            continue
 
-    # ===== REPLACEMENT BIASA =====
-    for k, v in replacements.items():
-        if k in text:
-            p.text = text.replace(k, str(v))
-            style_paragraph(p)
+        for k, v in replacements.items():
+            if k in text:
+                p.text = text.replace(k, str(v))
+                style_paragraph(p)
 
     # === ISI ===
     for idx, row in enumerate(module1_rows):
 
-        if not module5_rows:
-            continue
-
-        if idx >= len(module5_rows):
+        if not module5_rows or idx >= len(module5_rows):
             continue
 
         module5_item = module5_rows[idx]
 
-        if module5_item is None:
-            continue
-
-        if "intervals" not in module5_item:
+        if not module5_item or "intervals" not in module5_item:
             continue
 
         build_title(doc, row)
