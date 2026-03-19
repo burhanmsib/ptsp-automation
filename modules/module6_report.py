@@ -289,48 +289,52 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
         "$tanggal_hari_ini": datetime.now().strftime("%d %B %Y"),
     }
 
-    # =========================
-    # 🔥 REPLACEMENT + KOORDINAT (FIX TOTAL)
-    # =========================
-    for p in doc.paragraphs:
-        text = p.text
+# =========================
+# 🔥 REPLACEMENT + KOORDINAT (FINAL FIX)
+# =========================
+for p in doc.paragraphs:
+    text = p.text
 
-        # ===== KOORDINAT (GANTI PLACEHOLDER LAMA) =====
-        if "$LIST_KOORDINAT" in text:
+    # ===== KOORDINAT (POSISI TEMPLATE) =====
+    if "$LIST_KOORDINAT" in text:
 
-            p.clear()
+        p.clear()
 
-            # pembuka
-            p.add_run(
-                "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
-            )
-            style_paragraph(p, align="justify")
+        # pembuka
+        p.add_run(
+            "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
+        )
+        style_paragraph(p, align="justify")
 
-            # list koordinat
-            for row in module1_rows:
+        current_p = p
 
-                ka = row.get("Koordinat Awal","")
-                kb = row.get("Koordinat Akhir","")
+        # ===== LIST KOORDINAT (MASUK HALAMAN 1) =====
+        for row in module1_rows:
 
-                dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
-                dt_str = format_date_en(dt) if dt else ""
+            ka = row.get("Koordinat Awal","")
+            kb = row.get("Koordinat Akhir","")
 
-                p_new = doc.add_paragraph()
-                p_new.add_run(f"• from {ka} to {kb} for {dt_str}")
-                style_paragraph(p_new, align="justify")
+            dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
+            dt_str = format_date_en(dt) if dt else ""
 
-            # penutup
-            p_end = doc.add_paragraph()
-            p_end.add_run("here with we enclose the meteorological analysis in attachments sheets.")
-            style_paragraph(p_end, align="justify")
+            new_p = insert_paragraph_after(current_p)
+            new_p.add_run(f"• from {ka} to {kb} for {dt_str}")
+            style_paragraph(new_p, align="justify")
 
-            continue
+            current_p = new_p
 
-        # ===== REPLACEMENT BIASA =====
-        for k, v in replacements.items():
-            if k in text:
-                p.text = text.replace(k, str(v))
-                style_paragraph(p)
+        # penutup
+        end_p = insert_paragraph_after(current_p)
+        end_p.add_run("here with we enclose the meteorological analysis in attachments sheets.")
+        style_paragraph(end_p, align="justify")
+
+        continue
+
+    # ===== REPLACEMENT BIASA =====
+    for k, v in replacements.items():
+        if k in text:
+            p.text = text.replace(k, str(v))
+            style_paragraph(p)
 
     # === ISI ===
     for idx, row in enumerate(module1_rows):
