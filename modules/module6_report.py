@@ -48,6 +48,24 @@ def parse_date_flexible(date_str: str):
         except:
             pass
 
+    m = re.search(r"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})", s)
+    if m:
+        d, mn, y = m.groups()
+        if len(y) == 2:
+            y = "20" + y
+        try:
+            return datetime.strptime(f"{d}-{mn}-{y}", "%d-%m-%Y")
+        except:
+            pass
+
+    m2 = re.search(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", s)
+    if m2:
+        y, mn, d = m2.groups()
+        try:
+            return datetime.strptime(f"{d}-{mn}-{y}", "%d-%m-%Y")
+        except:
+            pass
+
     return None
 
 
@@ -108,12 +126,20 @@ def set_table_border(table):
     tblPr.append(borders)
 
 # =========================
-# 🔥 SAFE INSERT PARAGRAPH (FIX STREAMLIT)
+# HELPER: INSERT PARAGRAPH AFTER
 # =========================
 def insert_paragraph_after(paragraph):
     new_p = OxmlElement("w:p")
     paragraph._p.addnext(new_p)
-    return paragraph._parent.add_paragraph("")
+    return paragraph._parent.add_paragraph()
+
+# =========================
+# HELPER: CLEAR PARAGRAPH
+# =========================
+def clear_paragraph(paragraph):
+    p = paragraph._element
+    for child in list(p):
+        p.remove(child)
 
 # =========================
 # SECTION BUILDERS (ASLI)
@@ -139,9 +165,9 @@ def build_title(doc, row):
 
 def build_interval_table(doc, intervals, tz="WIB"):
     headers = [
-        "DATE",f"LOCAL TIME ({tz})","WEATHER",
-        "WIND (Knot)","CURRENT (cm/s)",
-        "WAVE (meter)","BEAUFORT SCALE"
+        "DATE", f"LOCAL TIME ({tz})", "WEATHER",
+        "WIND (Knot)", "CURRENT (cm/s)",
+        "WAVE (meter)", "BEAUFORT SCALE"
     ]
 
     table = doc.add_table(rows=1, cols=7)
@@ -192,7 +218,7 @@ def build_wave_category_table(doc):
     t = doc.add_table(rows=1, cols=2)
     set_table_border(t)
 
-    for label,val in data:
+    for label, val in data:
         cells = t.add_row().cells
         cells[0].text = label
         cells[1].text = val
@@ -240,13 +266,14 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
         "$tanggal_hari_ini": datetime.now().strftime("%d %B %Y"),
     }
 
+    # =========================
+    # REPLACE PLACEHOLDER DI HALAMAN 1
+    # =========================
     for p in doc.paragraphs:
         text = p.text
 
-        # 🔥 KOORDINAT FIX HALAMAN 1
         if "$LIST_KOORDINAT" in text:
-
-            p.text = ""
+            clear_paragraph(p)
 
             p.add_run(
                 "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
@@ -254,22 +281,21 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
             style_paragraph(p, align="justify")
 
             current_p = p
+            for row in module1_rows:
+                ka = row.get("Koordinat Awal", "")
+                kb = row.get("Koordinat Akhir", "")
 
-            for i, row in enumerate(module1_rows):
-
-                ka = row.get("Koordinat Awal","")
-                kb = row.get("Koordinat Akhir","")
-
-                dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
+                dt = parse_date_flexible(row.get("Tanggal Koordinat", ""))
                 dt_str = format_date_en(dt) if dt else ""
 
                 new_p = insert_paragraph_after(current_p)
+                clear_paragraph(new_p)
                 new_p.add_run(f"• from {ka} to {kb} for {dt_str}")
                 style_paragraph(new_p, align="justify")
-
                 current_p = new_p
 
             end_p = insert_paragraph_after(current_p)
+            clear_paragraph(end_p)
             end_p.add_run("here with we enclose the meteorological analysis in attachments sheets.")
             style_paragraph(end_p, align="justify")
 
@@ -280,15 +306,23 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
                 p.text = text.replace(k, str(v))
                 style_paragraph(p)
 
-    # === ISI ===
+    # =========================
+    # ISI LAPORAN
+    # =========================
     for idx, row in enumerate(module1_rows):
 
-        if not module5_rows or idx >= len(module5_rows):
+        if not module5_rows:
+            continue
+
+        if idx >= len(module5_rows):
             continue
 
         module5_item = module5_rows[idx]
 
-        if not module5_item or "intervals" not in module5_item:
+        if module5_item is None:
+            continue
+
+        if "intervals" not in module5_item:
             continue
 
         build_title(doc, row)
