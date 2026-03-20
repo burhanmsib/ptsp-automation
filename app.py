@@ -26,17 +26,21 @@ st.caption("BMKG – Otomatisasi Analisis Cuaca Maritim (WW3 + FVCOM + GSMaP)")
 # =========================
 # SESSION STATE INIT
 # =========================
-for key, default in {
+default_states = {
     "df_requests": None,
     "selected_id": None,
     "results_module2": None,
     "results_module34": None,
     "results_module5": None,
     "doc_buffer": None,
-    "tz": "WIB",
-}.items():
+    "last_tz": "WIB",
+    "weather_loaded": False,
+    "analysis_done": False,
+}
+
+for key, value in default_states.items():
     if key not in st.session_state:
-        st.session_state[key] = default
+        st.session_state[key] = value
 
 # =========================
 # MODULE 1 – GOOGLE SHEET
@@ -69,42 +73,44 @@ else:
     if selected_id and selected_id not in id_list:
         st.warning("⚠️ ID tidak ditemukan dalam database")
 
-# reset state kalau ID berubah
-if selected_id != st.session_state.selected_id:
+if not selected_id:
+    st.stop()
+
+# reset state jika ID berubah
+if st.session_state.selected_id != selected_id:
     st.session_state.selected_id = selected_id
     st.session_state.results_module2 = None
     st.session_state.results_module34 = None
     st.session_state.results_module5 = None
     st.session_state.doc_buffer = None
+    st.session_state.weather_loaded = False
+    st.session_state.analysis_done = False
 
 # =========================
 # FILTER DATA BERDASARKAN ID
 # =========================
-if selected_id:
-    df_id = (
-        df_requests[df_requests["Id"].astype(str) == selected_id]
-        .reset_index(drop=True)
-    )
+df_id = (
+    df_requests[df_requests["Id"].astype(str) == selected_id]
+    .reset_index(drop=True)
+)
 
-    if df_id.empty:
-        st.error("❌ Data untuk ID tersebut tidak ditemukan.")
-        st.stop()
-
-    st.success(f"📄 Total {len(df_id)} permintaan untuk ID {selected_id}")
-
-    st.dataframe(
-        df_id[["Tanggal Koordinat", "Koordinat Awal", "Koordinat Akhir"]],
-        use_container_width=True
-    )
-else:
+if df_id.empty:
+    st.error("❌ Data untuk ID tersebut tidak ditemukan.")
     st.stop()
+
+st.success(f"📄 Total {len(df_id)} permintaan untuk ID {selected_id}")
+
+st.dataframe(
+    df_id[["Tanggal Koordinat", "Koordinat Awal", "Koordinat Akhir"]],
+    use_container_width=True
+)
 
 # =========================
 # MODULE 2 – ROUTE PER TANGGAL
 # =========================
 st.header("🟩 Module 2 – Gambar Rute (Per Tanggal)")
 
-results_module2_temp = []
+results_module2 = []
 
 for idx, row in df_id.iterrows():
     st.markdown("---")
@@ -113,72 +119,76 @@ for idx, row in df_id.iterrows():
 
     hasil = process_route_segment_module2_streamlit(row, idx)
 
-    if hasil is not None:
-        results_module2_temp.append(hasil)
+    if hasil is None:
+        st.warning("❌ Rute belum valid. Silakan gambar ulang.")
+        st.stop()
 
-# tombol simpan route
-if len(results_module2_temp) == len(df_id):
-    if st.button("💾 Simpan Semua Rute", type="secondary"):
-        st.session_state.results_module2 = results_module2_temp
-        st.session_state.results_module34 = None
-        st.session_state.results_module5 = None
-        st.session_state.doc_buffer = None
-        st.success("✅ Semua rute berhasil disimpan")
-else:
-    st.warning("❌ Masih ada rute yang belum valid. Lengkapi semua rute terlebih dahulu.")
+    results_module2.append(hasil)
 
-# tampilkan status route tersimpan
-if st.session_state.results_module2:
-    st.success("✅ Rute tersimpan dan siap dipakai untuk pengambilan data cuaca")
+st.session_state.results_module2 = results_module2
+st.success("✅ Semua rute per tanggal berhasil ditentukan")
 
 # =========================
 # MODULE 3 & 4 – WEATHER SAMPLING
 # =========================
 st.header("🟨 Module 3 & 4 – Pengambilan Data Cuaca")
 
-st.session_state.tz = st.selectbox(
+tz = st.selectbox(
     "Zona Waktu Analisis",
     ["WIB", "WITA", "WIT"],
-    index=["WIB", "WITA", "WIT"].index(st.session_state.tz)
+    index=["WIB", "WITA", "WIT"].index(st.session_state.last_tz)
 )
+st.session_state.last_tz = tz
 
 if not st.session_state.results_module2:
     st.info("Selesaikan dan simpan semua rute terlebih dahulu.")
 else:
     if st.button("🌐 Ambil Data Cuaca", type="primary"):
-
         results_module34 = []
         gagal = False
 
-        with st.spinner("Mengambil data cuaca (WW3 + FVCOM + GSMaP FTP)..."):
+        progress = st.progress(0)
+        status_box = st.empty()
 
-            progress = st.progress(0)
-            status_box = st.empty()
+        with st.spinner("Mengambil data cuaca (WW3 + FVCOM + GSMaP FTP)..."):
+            total = len(st.session_state.results_module2)
 
             for i, item in enumerate(st.session_state.results_module2):
-                status_box.info(f"Memproses data cuaca {i+1}/{len(st.session_state.results_module2)} ...")
+                status_box.info(f"Memproses data cuaca {i+1}/{total} : {df_id.iloc[i]['Tanggal Koordinat']}")
 
-                result = process_module34(
-                    row=df_id.iloc[i],
-                    polyline=item["titik5"],
-                    tz=st.session_state.tz
-                )
-
-                if result is None:
+                try:
+                    result = process_module34(
+                        row=df_id.iloc[i],
+                        polyline=item["titik5"],
+                        tz=tz
+                    )
+                except Exception as e:
+                    st.error(f"❌ Error saat ambil data cuaca tanggal {df_id.iloc[i]['Tanggal Koordinat']}: {e}")
                     gagal = True
                     break
 
+                if result is None:
+                    gagal = True
+                    st.error(f"❌ Gagal mengambil data cuaca tanggal {df_id.iloc[i]['Tanggal Koordinat']}")
+                    break
+
                 results_module34.append(result)
-                progress.progress((i + 1) / len(st.session_state.results_module2))
+                progress.progress((i + 1) / total)
 
         if gagal:
             st.session_state.results_module34 = None
             st.session_state.results_module5 = None
-            st.error("❌ Gagal mengambil data cuaca. Periksa koneksi atau dataset.")
+            st.session_state.weather_loaded = False
+            st.session_state.analysis_done = False
         else:
             st.session_state.results_module34 = results_module34
-            st.session_state.results_module5 = None
+            st.session_state.weather_loaded = True
+            st.session_state.analysis_done = False
             st.success("✅ Data cuaca berhasil diambil")
+
+# tampilkan status data cuaca yang sudah ada
+if st.session_state.results_module34:
+    st.success(f"✅ Data cuaca tersimpan untuk {len(st.session_state.results_module34)} tanggal")
 
 # =========================
 # MODULE 5 – WEATHER ANALYSIS
@@ -188,16 +198,25 @@ st.header("🟧 Module 5 – Analisis Cuaca (Berbasis Rainfall)")
 if not st.session_state.results_module34:
     st.info("Ambil data cuaca terlebih dahulu.")
 else:
-    if st.button("📊 Proses Analisis Cuaca", type="secondary"):
-        with st.spinner("📊 Analisis cuaca 6-jaman..."):
-            results_module5 = process_module5(
-                st.session_state.results_module34,
-                tz=st.session_state.tz
-            )
+    if st.button("📊 Jalankan Analisis Cuaca"):
+        try:
+            with st.spinner("📊 Analisis cuaca 6-jaman..."):
+                results_module5 = process_module5(
+                    st.session_state.results_module34,
+                    tz=tz
+                )
 
-        st.session_state.results_module5 = results_module5
-        st.session_state.doc_buffer = None
-        st.success("✅ Analisis selesai")
+            st.session_state.results_module5 = results_module5
+            st.session_state.analysis_done = True
+            st.success("✅ Analisis selesai")
+
+        except Exception as e:
+            st.session_state.results_module5 = None
+            st.session_state.analysis_done = False
+            st.error(f"❌ Analisis gagal: {e}")
+
+if st.session_state.results_module5:
+    st.success(f"✅ Hasil analisis tersedia untuk {len(st.session_state.results_module5)} tanggal")
 
 # =========================
 # MODULE 6 – GENERATE REPORT
@@ -211,20 +230,23 @@ if not template_path.exists():
     st.stop()
 
 if not st.session_state.results_module5:
-    st.info("Lakukan analisis cuaca terlebih dahulu.")
+    st.info("Jalankan analisis cuaca terlebih dahulu sebelum generate laporan.")
 else:
     if st.button("📄 Generate Laporan Word", type="primary"):
+        try:
+            with st.spinner("📝 Menyusun laporan..."):
+                doc_buffer = generate_final_docx_streamlit(
+                    module1_rows=df_id.to_dict(orient="records"),
+                    module5_rows=st.session_state.results_module5,
+                    template_path=str(template_path)
+                )
 
-        with st.spinner("📝 Menyusun laporan..."):
-            doc_buffer = generate_final_docx_streamlit(
-                module1_rows=df_id.to_dict(orient="records"),
-                module5_rows=st.session_state.results_module5,
-                template_path=str(template_path)
-            )
+                st.session_state.doc_buffer = doc_buffer
 
-            st.session_state.doc_buffer = doc_buffer
+            st.success("✅ Laporan berhasil dibuat")
 
-        st.success("✅ Laporan berhasil dibuat")
+        except Exception as e:
+            st.error(f"❌ Gagal membuat laporan: {e}")
 
 # =========================
 # DOWNLOAD BUTTON
