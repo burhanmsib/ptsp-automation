@@ -504,7 +504,8 @@ def process_module34(row, polyline, tz="WIB"):
         t0 = dt_utc0 + timedelta(hours=i * 6)
         t3 = t0 + timedelta(hours=3)
 
-        points = generate_points_along_segment(start, end, n_points=3)
+        # points = generate_points_along_segment(start, end, n_points=3)
+        points = [start, end]
 
         samples = []
 
