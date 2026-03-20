@@ -143,7 +143,6 @@ def load_gsmap(dt):
 
     ds = xr.open_dataset(tmp_path)
 
-    # file temp dihapus belakangan supaya ds sempat terbaca aman
     try:
         ds.load()
     except Exception:
@@ -160,7 +159,7 @@ def load_gsmap(dt):
 # =========================
 # LOAD DATASETS
 # =========================
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_resource(show_spinner=False)
 def load_datasets_cached(dt_utc_str):
     dt_utc = datetime.fromisoformat(dt_utc_str)
     user, password = get_bmkg_credentials()
@@ -341,7 +340,6 @@ def safe_extract(ds, var, t, lat, lon, depth=None):
 
     try:
         da = ds[var]
-
         da = select_time_safe(da, t)
 
         if depth is not None:
@@ -504,8 +502,7 @@ def process_module34(row, polyline, tz="WIB"):
         t0 = dt_utc0 + timedelta(hours=i * 6)
         t3 = t0 + timedelta(hours=3)
 
-        # points = generate_points_along_segment(start, end, n_points=3)
-        points = [start, end]
+        points = generate_points_along_segment(start, end, n_points=3)
 
         samples = []
 
