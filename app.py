@@ -133,28 +133,23 @@ st.success("✅ Semua rute per tanggal berhasil ditentukan")
 # =========================
 st.header("🟨 Module 3 & 4 – Pengambilan Data Cuaca")
 
-tz = st.selectbox(
-    "Zona Waktu Analisis",
-    ["WIB", "WITA", "WIT"],
-    index=["WIB", "WITA", "WIT"].index(st.session_state.last_tz)
-)
-st.session_state.last_tz = tz
-
-if not st.session_state.results_module2:
+if not st.session_state.get("results_module2"):
     st.info("Selesaikan dan simpan semua rute terlebih dahulu.")
 else:
+    tz = st.selectbox("Zona Waktu Analisis", ["WIB", "WITA", "WIT"], index=0)
+
     if st.button("🌐 Ambil Data Cuaca", type="primary"):
         results_module34 = []
         gagal = False
 
-        progress = st.progress(0)
-        status_box = st.empty()
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
 
-        with st.spinner("Mengambil data cuaca (WW3 + FVCOM + GSMaP FTP)..."):
+        with st.spinner("Mengambil data cuaca dan menjalankan analisis..."):
             total = len(st.session_state.results_module2)
 
             for i, item in enumerate(st.session_state.results_module2):
-                status_box.info(f"Memproses data cuaca {i+1}/{total} : {df_id.iloc[i]['Tanggal Koordinat']}")
+                progress_text.info(f"Memproses {i+1}/{total} : {df_id.iloc[i]['Tanggal Koordinat']}")
 
                 try:
                     result = process_module34(
@@ -163,60 +158,48 @@ else:
                         tz=tz
                     )
                 except Exception as e:
-                    st.error(f"❌ Error saat ambil data cuaca tanggal {df_id.iloc[i]['Tanggal Koordinat']}: {e}")
+                    st.error(f"❌ Error process_module34 pada tanggal {df_id.iloc[i]['Tanggal Koordinat']}: {e}")
                     gagal = True
                     break
 
                 if result is None:
+                    st.error(f"❌ Data cuaca gagal diproses pada tanggal {df_id.iloc[i]['Tanggal Koordinat']}")
                     gagal = True
-                    st.error(f"❌ Gagal mengambil data cuaca tanggal {df_id.iloc[i]['Tanggal Koordinat']}")
                     break
 
                 results_module34.append(result)
-                progress.progress((i + 1) / total)
+                progress_bar.progress((i + 1) / total)
 
         if gagal:
             st.session_state.results_module34 = None
             st.session_state.results_module5 = None
-            st.session_state.weather_loaded = False
-            st.session_state.analysis_done = False
+            st.error("❌ Gagal mengambil data cuaca.")
         else:
             st.session_state.results_module34 = results_module34
-            st.session_state.weather_loaded = True
-            st.session_state.analysis_done = False
-            st.success("✅ Data cuaca berhasil diambil")
 
-# tampilkan status data cuaca yang sudah ada
-if st.session_state.results_module34:
-    st.success(f"✅ Data cuaca tersimpan untuk {len(st.session_state.results_module34)} tanggal")
+            try:
+                with st.spinner("📊 Analisis cuaca 6-jaman..."):
+                    results_module5 = process_module5(
+                        st.session_state.results_module34,
+                        tz=tz
+                    )
+
+                st.session_state.results_module5 = results_module5
+                st.success("✅ Data cuaca dan analisis berhasil diproses")
+
+            except Exception as e:
+                st.session_state.results_module5 = None
+                st.error(f"❌ Data cuaca berhasil diambil, tetapi analisis gagal: {e}")
 
 # =========================
 # MODULE 5 – WEATHER ANALYSIS
 # =========================
 st.header("🟧 Module 5 – Analisis Cuaca (Berbasis Rainfall)")
 
-if not st.session_state.results_module34:
-    st.info("Ambil data cuaca terlebih dahulu.")
+if not st.session_state.get("results_module5"):
+    st.info("Hasil analisis akan muncul setelah data cuaca berhasil diambil.")
 else:
-    if st.button("📊 Jalankan Analisis Cuaca"):
-        try:
-            with st.spinner("📊 Analisis cuaca 6-jaman..."):
-                results_module5 = process_module5(
-                    st.session_state.results_module34,
-                    tz=tz
-                )
-
-            st.session_state.results_module5 = results_module5
-            st.session_state.analysis_done = True
-            st.success("✅ Analisis selesai")
-
-        except Exception as e:
-            st.session_state.results_module5 = None
-            st.session_state.analysis_done = False
-            st.error(f"❌ Analisis gagal: {e}")
-
-if st.session_state.results_module5:
-    st.success(f"✅ Hasil analisis tersedia untuk {len(st.session_state.results_module5)} tanggal")
+    st.success("✅ Analisis selesai")
 
 # =========================
 # MODULE 6 – GENERATE REPORT
