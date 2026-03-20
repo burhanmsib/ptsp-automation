@@ -1,5 +1,3 @@
-module34_data.py
-
 # =========================
 # MODULE 3 + 4
 # WEATHER EXTRACTION & SAMPLING ENGINE
