@@ -371,22 +371,6 @@ def extract_hourly_weather(ds_wave, ds_cur, ds_rain, t, lat, lon):
         }
     }
 
-# =========================
-# GENERATE POINTS ALONG ROUTE
-# =========================
-def generate_points_along_segment(p1, p2, n_points=5):
-    """
-    Membuat titik-titik di sepanjang garis p1 → p2
-    """
-    points = []
-
-    for i in range(n_points):
-        frac = i / (n_points - 1)  # 0 → 1
-        lat = p1[0] + (p2[0] - p1[0]) * frac
-        lon = p1[1] + (p2[1] - p1[1]) * frac
-        points.append((lat, lon))
-
-    return points
 
 # =========================
 # MAIN ENTRY
@@ -399,9 +383,9 @@ def process_module34(row, polyline, tz="WIB"):
     if dt_local is None:
         return None
 
-    tz_offset = TZ_OFFSET.get(tz, 7)
+    tz_offset = TZ_OFFSET.get(tz,7)
 
-    dt_local = dt_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    dt_local = dt_local.replace(hour=0,minute=0,second=0,microsecond=0)
 
     dt_utc0 = dt_local.replace(
         tzinfo=timezone(timedelta(hours=tz_offset))
@@ -412,45 +396,22 @@ def process_module34(row, polyline, tz="WIB"):
     if ds_wave is None or ds_cur is None:
         return None
 
-    route = [(p[0], p[1]) for p in polyline]
+    route = [(p[0],p[1]) for p in polyline]
 
     segments = []
 
     for i in range(4):
 
-        # =========================
-        # SEGMENT
-        # =========================
-        start = route[i]
-        end = route[i+1]
+        lat,lon = route[min(i,len(route)-1)]
 
-        # =========================
-        # TIME
-        # =========================
         t0 = dt_utc0 + timedelta(hours=i*6)
         t3 = t0 + timedelta(hours=3)
 
-        # =========================
-        # GENERATE POINTS ALONG ROUTE
-        # =========================
-        points = generate_points_along_segment(start, end, n_points=5)
+        sample0 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t0,lat,lon)
+        sample3 = extract_hourly_weather(ds_wave,ds_cur,ds_rain,t3,lat,lon)
 
-        samples = []
+        samples = [sample0,sample3]
 
-        # =========================
-        # SAMPLING (FULL ROUTE)
-        # =========================
-        for lat, lon in points:
-
-            sample0 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t0, lat, lon)
-            sample3 = extract_hourly_weather(ds_wave, ds_cur, ds_rain, t3, lat, lon)
-
-            samples.append(sample0)
-            samples.append(sample3)
-
-        # =========================
-        # RAIN PROCESSING
-        # =========================
         rain_vals = [
             s["rain"]["precip"]
             for s in samples
@@ -461,18 +422,15 @@ def process_module34(row, polyline, tz="WIB"):
 
         weather_class = classify_weather_bmkg(rain_mean)
 
-        # =========================
-        # SAVE SEGMENT
-        # =========================
         segments.append({
-            "interval": f"T{i*6}-T{(i+1)*6}",
-            "samples": samples,
-            "rain_mean": rain_mean,
-            "weather": weather_class
+            "interval":f"T{i*6}-T{(i+1)*6}",
+            "samples":samples,
+            "rain_mean":rain_mean,
+            "weather":weather_class
         })
 
     return {
-        "tanggal": dt_local,
-        "tz": tz,
-        "segments": segments
+        "tanggal":dt_local,
+        "tz":tz,
+        "segments":segments
     }
