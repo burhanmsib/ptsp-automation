@@ -7,12 +7,18 @@ from datetime import datetime
 from io import BytesIO
 import re
 
+# =========================
+# CONSTANTS
+# =========================
 ID_MONTHS = {
     1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
     7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober",
     11: "November", 12: "Desember"
 }
 
+# =========================
+# DATE PARSER
+# =========================
 def parse_date_flexible(date_str: str):
     if not date_str:
         return None
@@ -20,9 +26,9 @@ def parse_date_flexible(date_str: str):
     s = str(date_str).strip()
 
     month_map = {
-        "Januari":"January","Februari":"February","Maret":"March","April":"April",
-        "Mei":"May","Juni":"June","Juli":"July","Agustus":"August",
-        "September":"September","Oktober":"October","November":"November","Desember":"December"
+        "Januari": "January", "Februari": "February", "Maret": "March", "April": "April",
+        "Mei": "May", "Juni": "June", "Juli": "July", "Agustus": "August",
+        "September": "September", "Oktober": "October", "November": "November", "Desember": "December"
     }
     for indo, eng in month_map.items():
         s = s.replace(indo, eng)
@@ -31,6 +37,7 @@ def parse_date_flexible(date_str: str):
         "%d %B %Y", "%d.%m.%Y", "%d-%m-%Y",
         "%Y-%m-%d", "%d/%m/%Y", "%d %b %Y", "%m/%d/%Y"
     ]
+
     for f in fmts:
         try:
             return datetime.strptime(s, f)
@@ -57,19 +64,34 @@ def parse_date_flexible(date_str: str):
 
     return None
 
+
 def format_date_id(dt: datetime):
     if not dt:
         return ""
-    return f"{dt.day:02d} {ID_MONTHS.get(dt.month,'')} {dt.year}"
+    return f"{dt.day:02d} {ID_MONTHS.get(dt.month, '')} {dt.year}"
+
 
 def format_date_en(dt: datetime):
     if not dt:
         return ""
     return dt.strftime("%B %d, %Y")
 
-def style_paragraph(p, size=12, bold=False, italic=False, align="left",
-                    space_before=0, space_after=0, line_spacing=1.0,
-                    left_indent_cm=0, first_line_indent_cm=0):
+
+# =========================
+# STYLE UTILITIES
+# =========================
+def style_paragraph(
+    p,
+    size=12,
+    bold=False,
+    italic=False,
+    align="left",
+    space_before=0,
+    space_after=0,
+    line_spacing=1.0,
+    left_indent_cm=0,
+    first_line_indent_cm=0
+):
     if not p.runs:
         p.add_run("")
 
@@ -97,6 +119,7 @@ def style_paragraph(p, size=12, bold=False, italic=False, align="left",
     pf.left_indent = Cm(left_indent_cm)
     pf.first_line_indent = Cm(first_line_indent_cm)
 
+
 def set_table_border(table):
     tbl = table._tbl
     tblPr = tbl.tblPr
@@ -114,6 +137,10 @@ def set_table_border(table):
 
     tblPr.append(borders)
 
+
+# =========================
+# XML HELPERS
+# =========================
 def insert_paragraph_after(paragraph, text=None, style=None):
     new_p = OxmlElement("w:p")
     paragraph._p.addnext(new_p)
@@ -126,11 +153,23 @@ def insert_paragraph_after(paragraph, text=None, style=None):
 
     return new_para
 
+
 def clear_paragraph(paragraph):
     p = paragraph._element
     for child in list(p):
         p.remove(child)
 
+
+def delete_paragraph(paragraph):
+    p = paragraph._element
+    parent = p.getparent()
+    if parent is not None:
+        parent.remove(p)
+
+
+# =========================
+# SECTION BUILDERS
+# =========================
 def build_title(doc, row):
     dt = parse_date_flexible(row.get("Tanggal Koordinat", ""))
     t_str = format_date_id(dt) if dt else row.get("Tanggal Koordinat", "")
@@ -148,6 +187,7 @@ def build_title(doc, row):
 
     style_paragraph(p, bold=True, align="center")
     doc.add_paragraph("")
+
 
 def build_interval_table(doc, intervals, tz="WIB"):
     headers = [
@@ -181,12 +221,14 @@ def build_interval_table(doc, intervals, tz="WIB"):
 
     doc.add_paragraph("")
 
+
 def build_notes_primary(doc):
     p = doc.add_paragraph()
     p.add_run("Note:\n").bold = True
     p.add_run("The direction of current is toward.\nThe direction of wind is from.")
     style_paragraph(p, size=11, italic=True)
     doc.add_paragraph("")
+
 
 def build_wave_category_table(doc):
     data = [
@@ -211,6 +253,7 @@ def build_wave_category_table(doc):
 
     doc.add_paragraph("")
 
+
 def build_satellite_image_table(doc, tanggal_str):
     dt = parse_date_flexible(tanggal_str)
     tanggal_fmt = format_date_id(dt) if dt else tanggal_str
@@ -233,25 +276,51 @@ def build_satellite_image_table(doc, tanggal_str):
 
     doc.add_paragraph("")
 
-def replace_first_page_placeholders(doc, module1_rows):
+
+# =========================
+# FIRST PAGE PLACEHOLDER REPLACER
+# =========================
+def replace_first_page_placeholders(doc, module1_rows, module5_rows):
     first = module1_rows[0]
+    ref_no = str(first.get("Nomor Surat", "") or "").strip()
+
+    valid_report_count = sum(
+        1
+        for idx in range(len(module1_rows))
+        if idx < len(module5_rows)
+        and module5_rows[idx]
+        and "intervals" in module5_rows[idx]
+    )
 
     replacements = {
         "$nama_perusahaan": str(first.get("Nama Perusahaan", "") or ""),
         "$alamat_perusahaan": str(first.get("Alamat Perusahaan", "") or ""),
-        "$no_surat": str(first.get("Nomor Surat", "") or ""),
+        "$no_surat": ref_no,
         "$tanggal_hari_ini": format_date_id(datetime.now()),
+        "$jumlah_laporan_section": str(valid_report_count),
     }
+
+    paragraphs_to_delete = []
 
     for p in doc.paragraphs:
         text = p.text.strip()
 
+        if "Responding to your letter with -" in text and "as listed below" in text:
+            paragraphs_to_delete.append(p)
+            continue
+
+        if text == "here with we enclose the meteorological analysis in attachments sheets.":
+            paragraphs_to_delete.append(p)
+            continue
+
         if "$LIST_KOORDINAT" in text:
             clear_paragraph(p)
 
-            p.add_run(
-                "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
+            intro_text = (
+                f"Responding to your letter with Ref. {ref_no if ref_no else '______'} "
+                f"on the subject of marine meteorological analysis with coordinate :"
             )
+            p.add_run(intro_text)
             style_paragraph(
                 p,
                 size=12,
@@ -304,17 +373,28 @@ def replace_first_page_placeholders(doc, module1_rows):
                 p.text = p.text.replace(k, str(v))
                 style_paragraph(p)
 
+    for p in reversed(paragraphs_to_delete):
+        delete_paragraph(p)
+
+
+# =========================
+# MAIN ENTRY
+# =========================
 def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
     doc = Document(template_path)
 
-    replace_first_page_placeholders(doc, module1_rows)
+    replace_first_page_placeholders(doc, module1_rows, module5_rows)
 
     for idx, row in enumerate(module1_rows):
-        if not module5_rows or idx >= len(module5_rows):
+        if not module5_rows:
+            continue
+        if idx >= len(module5_rows):
             continue
 
         module5_item = module5_rows[idx]
-        if not module5_item or "intervals" not in module5_item:
+        if module5_item is None:
+            continue
+        if "intervals" not in module5_item:
             continue
 
         build_title(doc, row)
