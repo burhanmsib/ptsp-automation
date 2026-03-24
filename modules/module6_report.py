@@ -1,29 +1,18 @@
-# =========================
-# MODULE 6 : REPORT GENERATOR (STREAMLIT READY)
-# =========================
-
 from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.shared import OxmlElement, qn
+from docx.text.paragraph import Paragraph
 from datetime import datetime
 from io import BytesIO
 import re
-import tempfile
-import os
 
-# =========================
-# CONSTANTS
-# =========================
 ID_MONTHS = {
     1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
     7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober",
     11: "November", 12: "Desember"
 }
 
-# =========================
-# DATE PARSER
-# =========================
 def parse_date_flexible(date_str: str):
     if not date_str:
         return None
@@ -68,22 +57,19 @@ def parse_date_flexible(date_str: str):
 
     return None
 
-
 def format_date_id(dt: datetime):
     if not dt:
         return ""
     return f"{dt.day:02d} {ID_MONTHS.get(dt.month,'')} {dt.year}"
-
 
 def format_date_en(dt: datetime):
     if not dt:
         return ""
     return dt.strftime("%B %d, %Y")
 
-# =========================
-# STYLE UTILITIES
-# =========================
-def style_paragraph(p, size=12, bold=False, italic=False, align="left"):
+def style_paragraph(p, size=12, bold=False, italic=False, align="left",
+                    space_before=0, space_after=0, line_spacing=1.0,
+                    left_indent_cm=0, first_line_indent_cm=0):
     if not p.runs:
         p.add_run("")
 
@@ -104,9 +90,12 @@ def style_paragraph(p, size=12, bold=False, italic=False, align="left"):
     else:
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after = Pt(0)
-
+    pf = p.paragraph_format
+    pf.space_before = Pt(space_before)
+    pf.space_after = Pt(space_after)
+    pf.line_spacing = line_spacing
+    pf.left_indent = Cm(left_indent_cm)
+    pf.first_line_indent = Cm(first_line_indent_cm)
 
 def set_table_border(table):
     tbl = table._tbl
@@ -116,7 +105,7 @@ def set_table_border(table):
         tbl.insert(0, tblPr)
 
     borders = OxmlElement("w:tblBorders")
-    for side in ["top","left","bottom","right","insideH","insideV"]:
+    for side in ["top", "left", "bottom", "right", "insideH", "insideV"]:
         elem = OxmlElement(f"w:{side}")
         elem.set(qn("w:val"), "single")
         elem.set(qn("w:sz"), "6")
@@ -125,31 +114,29 @@ def set_table_border(table):
 
     tblPr.append(borders)
 
-# =========================
-# HELPER: INSERT PARAGRAPH AFTER
-# =========================
-def insert_paragraph_after(paragraph):
+def insert_paragraph_after(paragraph, text=None, style=None):
     new_p = OxmlElement("w:p")
     paragraph._p.addnext(new_p)
-    return paragraph._parent.add_paragraph()
+    new_para = Paragraph(new_p, paragraph._parent)
 
-# =========================
-# HELPER: CLEAR PARAGRAPH
-# =========================
+    if text:
+        new_para.add_run(text)
+    if style:
+        new_para.style = style
+
+    return new_para
+
 def clear_paragraph(paragraph):
     p = paragraph._element
     for child in list(p):
         p.remove(child)
 
-# =========================
-# SECTION BUILDERS (ASLI)
-# =========================
 def build_title(doc, row):
-    dt = parse_date_flexible(row.get("Tanggal Koordinat",""))
-    t_str = format_date_id(dt) if dt else row.get("Tanggal Koordinat","")
+    dt = parse_date_flexible(row.get("Tanggal Koordinat", ""))
+    t_str = format_date_id(dt) if dt else row.get("Tanggal Koordinat", "")
 
-    ka = row.get("Koordinat Awal","")
-    kb = row.get("Koordinat Akhir","")
+    ka = row.get("Koordinat Awal", "")
+    kb = row.get("Koordinat Akhir", "")
 
     p = doc.add_paragraph()
     p.add_run("Meteorological Reports").bold = True
@@ -161,7 +148,6 @@ def build_title(doc, row):
 
     style_paragraph(p, bold=True, align="center")
     doc.add_paragraph("")
-
 
 def build_interval_table(doc, intervals, tz="WIB"):
     headers = [
@@ -181,20 +167,19 @@ def build_interval_table(doc, intervals, tz="WIB"):
         data = intervals[j] if j < len(intervals) else {}
         row = table.add_row().cells
         values = [
-            data.get("DATE",""),
-            data.get("LOCAL TIME",""),
-            data.get("WEATHER",""),
-            data.get("WIND",""),
-            data.get("CURRENT",""),
-            data.get("WAVE",""),
-            data.get("BEAUFORT",""),
+            data.get("DATE", ""),
+            data.get("LOCAL TIME", ""),
+            data.get("WEATHER", ""),
+            data.get("WIND", ""),
+            data.get("CURRENT", ""),
+            data.get("WAVE", ""),
+            data.get("BEAUFORT", ""),
         ]
         for i, v in enumerate(values):
             row[i].text = str(v)
             style_paragraph(row[i].paragraphs[0], align="center")
 
     doc.add_paragraph("")
-
 
 def build_notes_primary(doc):
     p = doc.add_paragraph()
@@ -203,16 +188,15 @@ def build_notes_primary(doc):
     style_paragraph(p, size=11, italic=True)
     doc.add_paragraph("")
 
-
 def build_wave_category_table(doc):
     data = [
-        ("Smooth","0.10 – 0.50 m"),
-        ("Slight","0.50 – 1.25 m"),
-        ("Moderate","1.25 – 2.50 m"),
-        ("Rough","2.50 – 4.00 m"),
-        ("Very Rough","4.00 – 6.00 m"),
-        ("High","6.00 – 9.00 m"),
-        ("Very High","9.00 – 14.00 m"),
+        ("Smooth", "0.10 – 0.50 m"),
+        ("Slight", "0.50 – 1.25 m"),
+        ("Moderate", "1.25 – 2.50 m"),
+        ("Rough", "2.50 – 4.00 m"),
+        ("Very Rough", "4.00 – 6.00 m"),
+        ("High", "6.00 – 9.00 m"),
+        ("Very High", "9.00 – 14.00 m"),
     ]
 
     t = doc.add_table(rows=1, cols=2)
@@ -226,7 +210,6 @@ def build_wave_category_table(doc):
         style_paragraph(cells[1].paragraphs[0], size=11, align="center")
 
     doc.add_paragraph("")
-
 
 def build_satellite_image_table(doc, tanggal_str):
     dt = parse_date_flexible(tanggal_str)
@@ -250,27 +233,18 @@ def build_satellite_image_table(doc, tanggal_str):
 
     doc.add_paragraph("")
 
-# =========================
-# MAIN ENTRY (STREAMLIT)
-# =========================
-def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
-
-    doc = Document(template_path)
-
+def replace_first_page_placeholders(doc, module1_rows):
     first = module1_rows[0]
 
     replacements = {
         "$nama_perusahaan": str(first.get("Nama Perusahaan", "") or ""),
         "$alamat_perusahaan": str(first.get("Alamat Perusahaan", "") or ""),
         "$no_surat": str(first.get("Nomor Surat", "") or ""),
-        "$tanggal_hari_ini": datetime.now().strftime("%d %B %Y"),
+        "$tanggal_hari_ini": format_date_id(datetime.now()),
     }
 
-    # =========================
-    # REPLACE PLACEHOLDER DI HALAMAN 1
-    # =========================
     for p in doc.paragraphs:
-        text = p.text
+        text = p.text.strip()
 
         if "$LIST_KOORDINAT" in text:
             clear_paragraph(p)
@@ -278,51 +252,69 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
             p.add_run(
                 "Responding to your letter with Ref. ______ on the subject of marine meteorological analysis with coordinate :"
             )
-            style_paragraph(p, align="justify")
+            style_paragraph(
+                p,
+                size=12,
+                align="justify",
+                space_before=0,
+                space_after=2,
+                line_spacing=1.0
+            )
 
             current_p = p
+
             for row in module1_rows:
-                ka = row.get("Koordinat Awal", "")
-                kb = row.get("Koordinat Akhir", "")
-
+                ka = str(row.get("Koordinat Awal", "") or "").strip()
+                kb = str(row.get("Koordinat Akhir", "") or "").strip()
                 dt = parse_date_flexible(row.get("Tanggal Koordinat", ""))
-                dt_str = format_date_en(dt) if dt else ""
+                dt_str = format_date_en(dt) if dt else str(row.get("Tanggal Koordinat", "") or "").strip()
 
+                bullet_text = f"• from {ka} to {kb} for {dt_str}"
                 new_p = insert_paragraph_after(current_p)
                 clear_paragraph(new_p)
-                new_p.add_run(f"• from {ka} to {kb} for {dt_str}")
-                style_paragraph(new_p, align="justify")
+                new_p.add_run(bullet_text)
+
+                style_paragraph(
+                    new_p,
+                    size=11,
+                    align="justify",
+                    space_before=0,
+                    space_after=0,
+                    line_spacing=1.0,
+                    left_indent_cm=0.5,
+                    first_line_indent_cm=-0.3
+                )
                 current_p = new_p
 
             end_p = insert_paragraph_after(current_p)
             clear_paragraph(end_p)
             end_p.add_run("here with we enclose the meteorological analysis in attachments sheets.")
-            style_paragraph(end_p, align="justify")
-
+            style_paragraph(
+                end_p,
+                size=12,
+                align="justify",
+                space_before=2,
+                space_after=0,
+                line_spacing=1.0
+            )
             continue
 
         for k, v in replacements.items():
-            if k in text:
-                p.text = text.replace(k, str(v))
+            if k in p.text:
+                p.text = p.text.replace(k, str(v))
                 style_paragraph(p)
 
-    # =========================
-    # ISI LAPORAN
-    # =========================
+def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
+    doc = Document(template_path)
+
+    replace_first_page_placeholders(doc, module1_rows)
+
     for idx, row in enumerate(module1_rows):
-
-        if not module5_rows:
-            continue
-
-        if idx >= len(module5_rows):
+        if not module5_rows or idx >= len(module5_rows):
             continue
 
         module5_item = module5_rows[idx]
-
-        if module5_item is None:
-            continue
-
-        if "intervals" not in module5_item:
+        if not module5_item or "intervals" not in module5_item:
             continue
 
         build_title(doc, row)
@@ -341,5 +333,4 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
-
     return buffer
