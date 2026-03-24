@@ -167,6 +167,25 @@ def delete_paragraph(paragraph):
         parent.remove(p)
 
 
+def remove_template_markers(doc):
+    markers = {
+        "$LAPORAN_SECTION_START",
+        "$LAPORAN_SECTION_END",
+        "$Laporan_Section_Start",
+        "$Laporan_Section_End",
+    }
+
+    paragraphs_to_delete = []
+
+    for p in doc.paragraphs:
+        text = p.text.strip()
+        if text in markers:
+            paragraphs_to_delete.append(p)
+
+    for p in reversed(paragraphs_to_delete):
+        delete_paragraph(p)
+
+
 # =========================
 # SECTION BUILDERS
 # =========================
@@ -305,18 +324,14 @@ def replace_first_page_placeholders(doc, module1_rows, module5_rows):
     for p in doc.paragraphs:
         text = p.text.strip()
 
-        # Hapus semua paragraf lama yang dimulai dengan "Responding to your letter"
-        # kecuali placeholder yang akan kita isi ulang
         if text.startswith("Responding to your letter") and "$LIST_KOORDINAT" not in text:
             paragraphs_to_delete.append(p)
             continue
 
-        # Hapus kalimat penutup lama yang dobel
         if "here with we enclose the meteorological analysis" in text.lower():
             paragraphs_to_delete.append(p)
             continue
 
-        # Isi ulang placeholder list koordinat
         if "$LIST_KOORDINAT" in text:
             clear_paragraph(p)
 
@@ -377,6 +392,7 @@ def replace_first_page_placeholders(doc, module1_rows, module5_rows):
                 p.text = p.text.replace(k, str(v))
                 style_paragraph(p)
 
+
     for p in reversed(paragraphs_to_delete):
         delete_paragraph(p)
 
@@ -413,6 +429,8 @@ def generate_final_docx_streamlit(module1_rows, module5_rows, template_path):
 
         if idx < len(module1_rows) - 1:
             doc.add_page_break()
+
+    remove_template_markers(doc)
 
     buffer = BytesIO()
     doc.save(buffer)
