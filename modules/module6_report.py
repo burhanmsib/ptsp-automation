@@ -305,14 +305,18 @@ def replace_first_page_placeholders(doc, module1_rows, module5_rows):
     for p in doc.paragraphs:
         text = p.text.strip()
 
-        if "Responding to your letter with -" in text and "as listed below" in text:
+        # Hapus semua paragraf lama yang dimulai dengan "Responding to your letter"
+        # kecuali placeholder yang akan kita isi ulang
+        if text.startswith("Responding to your letter") and "$LIST_KOORDINAT" not in text:
             paragraphs_to_delete.append(p)
             continue
 
-        if text == "here with we enclose the meteorological analysis in attachments sheets.":
+        # Hapus kalimat penutup lama yang dobel
+        if "here with we enclose the meteorological analysis" in text.lower():
             paragraphs_to_delete.append(p)
             continue
 
+        # Isi ulang placeholder list koordinat
         if "$LIST_KOORDINAT" in text:
             clear_paragraph(p)
 
